@@ -19,7 +19,7 @@ namespace WorktreeInitializer.Core.Services
             _fileCopyService = fileCopyService;
         }
 
-        public ICommand CreateCommand(string[] args)
+        public ICommand CreateCommand(string[] args, IProgress<string>? progress = null)
         {
             if (args.Length == 0)
             {
@@ -35,7 +35,7 @@ namespace WorktreeInitializer.Core.Services
                     {
                         throw new ArgumentException("Usage: wi init <source-path> <destination-path>");
                     }
-                    return new InitCommand(_gitIgnoredFileProvider, _pathMapper, _fileCopyService, args[1], args[2]);
+                    return new InitCommand(_gitIgnoredFileProvider, _pathMapper, _fileCopyService, args[1], args[2], progress);
 
                 case "help":
                 case "--help":

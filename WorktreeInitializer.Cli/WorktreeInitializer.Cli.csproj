@@ -27,7 +27,7 @@
     <ToolCommandName>wi</ToolCommandName>
     <PackageOutputPath>./bin/nupkg</PackageOutputPath>
     <PackageId>WorktreeInitializer</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Authors>Adam Tovatt</Authors>
     <Description>A tool for copying gitignored files from a source git repository to a new worktree directory. Works as both a CLI tool and MCP server.</Description>
     <PackageTags>mcp;git;worktree;cli-tool;gitignore</PackageTags>

@@ -11,6 +11,6 @@ namespace WorktreeInitializer.Core.Interfaces
         /// <param name="args">The command-line arguments.</param>
         /// <returns>The created command.</returns>
         /// <exception cref="ArgumentException">Thrown if the arguments are invalid or the command is unknown.</exception>
-        ICommand CreateCommand(string[] args);
+        ICommand CreateCommand(string[] args, IProgress<string>? progress = null);
     }
 }

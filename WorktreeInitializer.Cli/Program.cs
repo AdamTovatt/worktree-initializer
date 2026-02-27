@@ -33,7 +33,7 @@ namespace WorktreeInitializer.Cli
             try
             {
                 ICommandFactory commandFactory = serviceProvider.GetRequiredService<ICommandFactory>();
-                ICommand command = commandFactory.CreateCommand(args);
+                ICommand command = commandFactory.CreateCommand(args, new Progress<string>(Console.WriteLine));
                 CommandResult result = await command.ExecuteAsync(CancellationToken.None);
 
                 Console.WriteLine(result.Message);
