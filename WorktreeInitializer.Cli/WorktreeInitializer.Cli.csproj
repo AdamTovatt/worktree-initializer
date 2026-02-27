@@ -1,6 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <None Include="..\README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\WorktreeInitializer.Core\WorktreeInitializer.Core.csproj" />
   </ItemGroup>
 
@@ -29,6 +36,9 @@
     <Product>WorktreeInitializer</Product>
     <Copyright>MIT</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/AdamTovatt/worktree-initializer</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/AdamTovatt/worktree-initializer</RepositoryUrl>
   </PropertyGroup>
 
 </Project>
