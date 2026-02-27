@@ -1,0 +1,75 @@
+using Moq;
+using WorktreeInitializer.Core.Commands;
+using WorktreeInitializer.Core.Interfaces;
+using WorktreeInitializer.Core.Services;
+
+namespace WorktreeInitializer.Tests.Services
+{
+    public class CommandFactoryTests
+    {
+        private readonly CommandFactory _factory;
+
+        public CommandFactoryTests()
+        {
+            Mock<IGitIgnoredFileProvider> mockGit = new Mock<IGitIgnoredFileProvider>();
+            Mock<IPathMapper> mockMapper = new Mock<IPathMapper>();
+            Mock<IFileCopyService> mockCopy = new Mock<IFileCopyService>();
+            _factory = new CommandFactory(mockGit.Object, mockMapper.Object, mockCopy.Object);
+        }
+
+        [Fact]
+        public void CreateCommand_NoArgs_ReturnsHelpCommand()
+        {
+            ICommand command = _factory.CreateCommand(Array.Empty<string>());
+            Assert.IsType<HelpCommand>(command);
+        }
+
+        [Fact]
+        public void CreateCommand_Help_ReturnsHelpCommand()
+        {
+            ICommand command = _factory.CreateCommand(new[] { "help" });
+            Assert.IsType<HelpCommand>(command);
+        }
+
+        [Fact]
+        public void CreateCommand_DashDashHelp_ReturnsHelpCommand()
+        {
+            ICommand command = _factory.CreateCommand(new[] { "--help" });
+            Assert.IsType<HelpCommand>(command);
+        }
+
+        [Fact]
+        public void CreateCommand_DashH_ReturnsHelpCommand()
+        {
+            ICommand command = _factory.CreateCommand(new[] { "-h" });
+            Assert.IsType<HelpCommand>(command);
+        }
+
+        [Fact]
+        public void CreateCommand_Init_WithPaths_ReturnsInitCommand()
+        {
+            ICommand command = _factory.CreateCommand(new[] { "init", "/source", "/dest" });
+            Assert.IsType<InitCommand>(command);
+        }
+
+        [Fact]
+        public void CreateCommand_Init_CaseInsensitive_ReturnsInitCommand()
+        {
+            ICommand command = _factory.CreateCommand(new[] { "INIT", "/source", "/dest" });
+            Assert.IsType<InitCommand>(command);
+        }
+
+        [Fact]
+        public void CreateCommand_Init_MissingPaths_ThrowsArgumentException()
+        {
+            Assert.Throws<ArgumentException>(() => _factory.CreateCommand(new[] { "init" }));
+        }
+
+        [Fact]
+        public void CreateCommand_UnknownCommand_ThrowsArgumentException()
+        {
+            ArgumentException ex = Assert.Throws<ArgumentException>(() => _factory.CreateCommand(new[] { "unknown" }));
+            Assert.Contains("unknown", ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+}

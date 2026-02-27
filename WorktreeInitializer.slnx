@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="WorktreeInitializer.Cli/WorktreeInitializer.Cli.csproj" />
+  <Project Path="WorktreeInitializer.Core/WorktreeInitializer.Core.csproj" />
+  <Project Path="WorktreeInitializer.Tests/WorktreeInitializer.Tests.csproj" />
+</Solution>

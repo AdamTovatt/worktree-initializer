@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\WorktreeInitializer.Core\WorktreeInitializer.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.1" />
+    <PackageReference Include="ModelContextProtocol" Version="0.5.0-preview.1" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>wi</ToolCommandName>
+    <PackageOutputPath>./bin/nupkg</PackageOutputPath>
+    <PackageId>WorktreeInitializer</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Adam Tovatt</Authors>
+    <Description>A tool for copying gitignored files from a source git repository to a new worktree directory. Works as both a CLI tool and MCP server.</Description>
+    <PackageTags>mcp;git;worktree;cli-tool;gitignore</PackageTags>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <Title>WorktreeInitializer</Title>
+    <Product>WorktreeInitializer</Product>
+    <Copyright>MIT</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+
+</Project>
