@@ -2,7 +2,6 @@
 
 [![Tests](https://github.com/AdamTovatt/worktree-initializer/actions/workflows/dotnet.yml/badge.svg)](https://github.com/AdamTovatt/worktree-initializer/actions/workflows/dotnet.yml)
 [![NuGet Version](https://img.shields.io/nuget/v/WorktreeInitializer.svg)](https://www.nuget.org/packages/WorktreeInitializer)
-[![NuGet Downloads](https://img.shields.io/nuget/dt/WorktreeInitializer.svg)](https://www.nuget.org/packages/WorktreeInitializer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
 A tool for copying gitignored files from a source repository to a new worktree. Works as both a CLI tool and an MCP (Model Context Protocol) server for AI agents.
