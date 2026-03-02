@@ -14,7 +14,8 @@ namespace WorktreeInitializer.Tests.Services
             Mock<IGitIgnoredFileProvider> mockGit = new Mock<IGitIgnoredFileProvider>();
             Mock<IPathMapper> mockMapper = new Mock<IPathMapper>();
             Mock<IFileCopyService> mockCopy = new Mock<IFileCopyService>();
-            _factory = new CommandFactory(mockGit.Object, mockMapper.Object, mockCopy.Object);
+            Mock<IWorktreeConfigProvider> mockConfig = new Mock<IWorktreeConfigProvider>();
+            _factory = new CommandFactory(mockGit.Object, mockMapper.Object, mockCopy.Object, mockConfig.Object);
         }
 
         [Fact]
@@ -70,6 +71,28 @@ namespace WorktreeInitializer.Tests.Services
         {
             ArgumentException ex = Assert.Throws<ArgumentException>(() => _factory.CreateCommand(new[] { "unknown" }));
             Assert.Contains("unknown", ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public void CreateCommand_Init_WithIgnoreFlags_ReturnsInitCommand()
+        {
+            ICommand command = _factory.CreateCommand(new[] { "init", "/source", "/dest", "--ignore", "node_modules" });
+            Assert.IsType<InitCommand>(command);
+        }
+
+        [Fact]
+        public void CreateCommand_Init_WithMultipleIgnoreFlags_ReturnsInitCommand()
+        {
+            ICommand command = _factory.CreateCommand(new[] { "init", "/source", "/dest", "--ignore", "node_modules", "--ignore", ".venv" });
+            Assert.IsType<InitCommand>(command);
+        }
+
+        [Fact]
+        public void CreateCommand_Init_IgnoreFlagWithoutValue_IsSkipped()
+        {
+            // --ignore at end with no value should not crash
+            ICommand command = _factory.CreateCommand(new[] { "init", "/source", "/dest", "--ignore" });
+            Assert.IsType<InitCommand>(command);
         }
     }
 }

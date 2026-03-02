@@ -12,23 +12,29 @@ namespace WorktreeInitializer.Core.Commands
         private readonly IGitIgnoredFileProvider _gitIgnoredFileProvider;
         private readonly IPathMapper _pathMapper;
         private readonly IFileCopyService _fileCopyService;
+        private readonly IWorktreeConfigProvider _configProvider;
         private readonly string _sourcePath;
         private readonly string _destinationPath;
+        private readonly IReadOnlyList<string>? _ignorePaths;
         private readonly IProgress<string>? _progress;
 
         public InitCommand(
             IGitIgnoredFileProvider gitIgnoredFileProvider,
             IPathMapper pathMapper,
             IFileCopyService fileCopyService,
+            IWorktreeConfigProvider configProvider,
             string sourcePath,
             string destinationPath,
+            IReadOnlyList<string>? ignorePaths = null,
             IProgress<string>? progress = null)
         {
             _gitIgnoredFileProvider = gitIgnoredFileProvider;
             _pathMapper = pathMapper;
             _fileCopyService = fileCopyService;
+            _configProvider = configProvider;
             _sourcePath = sourcePath;
             _destinationPath = destinationPath;
+            _ignorePaths = ignorePaths;
             _progress = progress;
         }
 
@@ -59,12 +65,53 @@ namespace WorktreeInitializer.Core.Commands
                 return new CommandResult(Success: false, Message: $"Failed to get ignored files: {ex.Message}");
             }
 
-            if (ignoredFiles.Count == 0)
+            // Merge CLI ignore paths + config file ignore patterns
+            HashSet<string> ignorePatterns = new HashSet<string>(StringComparer.Ordinal);
+
+            if (_ignorePaths != null)
             {
-                return new CommandResult(Success: true, Message: "Nothing to copy — no ignored files found.");
+                foreach (string pattern in _ignorePaths)
+                {
+                    ignorePatterns.Add(pattern);
+                }
             }
 
-            _progress?.Report($"Discovered {ignoredFiles.Count} file(s) to copy.");
+            try
+            {
+                List<string> configPatterns = await _configProvider.GetIgnorePatternsAsync(resolvedSource, cancellationToken);
+                foreach (string pattern in configPatterns)
+                {
+                    ignorePatterns.Add(pattern);
+                }
+            }
+            catch (InvalidOperationException ex)
+            {
+                return new CommandResult(Success: false, Message: $"Failed to read config: {ex.Message}");
+            }
+
+            // Filter out files matching ignore patterns
+            int skippedCount = 0;
+            if (ignorePatterns.Count > 0)
+            {
+                int beforeCount = ignoredFiles.Count;
+                ignoredFiles = ignoredFiles.Where(f => !IsIgnored(f, ignorePatterns)).ToList();
+                skippedCount = beforeCount - ignoredFiles.Count;
+            }
+
+            if (ignoredFiles.Count == 0)
+            {
+                string skipInfo = skippedCount > 0 ? $" ({skippedCount} file(s) excluded by ignore rules)" : "";
+                return new CommandResult(Success: true, Message: $"Nothing to copy — no ignored files found.{skipInfo}");
+            }
+
+            if (skippedCount > 0)
+            {
+                _progress?.Report($"Discovered {ignoredFiles.Count} file(s) to copy ({skippedCount} excluded by ignore rules).");
+            }
+            else
+            {
+                _progress?.Report($"Discovered {ignoredFiles.Count} file(s) to copy.");
+            }
 
             List<FileCopyResult> results = new List<FileCopyResult>();
             int copied = 0;
@@ -105,6 +152,19 @@ namespace WorktreeInitializer.Core.Commands
             }
 
             return new CommandResult(Success: failed == 0, Message: message, Details: details);
+        }
+
+        private static bool IsIgnored(string relativePath, HashSet<string> ignorePatterns)
+        {
+            foreach (string pattern in ignorePatterns)
+            {
+                if (relativePath == pattern || relativePath.StartsWith(pattern + "/", StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

@@ -94,6 +94,7 @@ namespace WorktreeInitializer.Cli
             services.AddSingleton<IGitIgnoredFileProvider, GitIgnoredFileProvider>();
             services.AddSingleton<IPathMapper, PathMapper>();
             services.AddSingleton<IFileCopyService, FileCopyService>();
+            services.AddSingleton<IWorktreeConfigProvider, WorktreeConfigProvider>();
             services.AddSingleton<ICommandFactory, CommandFactory>();
         }
     }

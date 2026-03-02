@@ -11,6 +11,7 @@ namespace WorktreeInitializer.Tests.Commands
         private readonly Mock<IGitIgnoredFileProvider> _mockGit;
         private readonly Mock<IPathMapper> _mockMapper;
         private readonly Mock<IFileCopyService> _mockCopy;
+        private readonly Mock<IWorktreeConfigProvider> _mockConfig;
 
         public InitCommandTests()
         {
@@ -20,6 +21,10 @@ namespace WorktreeInitializer.Tests.Commands
             _mockGit = new Mock<IGitIgnoredFileProvider>();
             _mockMapper = new Mock<IPathMapper>();
             _mockCopy = new Mock<IFileCopyService>();
+            _mockConfig = new Mock<IWorktreeConfigProvider>();
+
+            _mockConfig.Setup(c => c.GetIgnorePatternsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<string>());
         }
 
         public void Dispose()
@@ -54,7 +59,7 @@ namespace WorktreeInitializer.Tests.Commands
                 .ReturnsAsync((string rel, string src, string dst, CancellationToken _) =>
                     new FileCopyResult(rel, src, dst, Success: true));
 
-            InitCommand command = new InitCommand(_mockGit.Object, _mockMapper.Object, _mockCopy.Object, source, dest);
+            InitCommand command = new InitCommand(_mockGit.Object, _mockMapper.Object, _mockCopy.Object, _mockConfig.Object, source, dest);
             CommandResult result = await command.ExecuteAsync(CancellationToken.None);
 
             Assert.True(result.Success);
@@ -70,7 +75,7 @@ namespace WorktreeInitializer.Tests.Commands
             _mockGit.Setup(g => g.GetIgnoredFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new List<string>());
 
-            InitCommand command = new InitCommand(_mockGit.Object, _mockMapper.Object, _mockCopy.Object, source, dest);
+            InitCommand command = new InitCommand(_mockGit.Object, _mockMapper.Object, _mockCopy.Object, _mockConfig.Object, source, dest);
             CommandResult result = await command.ExecuteAsync(CancellationToken.None);
 
             Assert.True(result.Success);
@@ -85,7 +90,7 @@ namespace WorktreeInitializer.Tests.Commands
             Directory.CreateDirectory(dest);
             string nonExistentSource = Path.Combine(_tempDir, "no_such_source");
 
-            InitCommand command = new InitCommand(_mockGit.Object, _mockMapper.Object, _mockCopy.Object, nonExistentSource, dest);
+            InitCommand command = new InitCommand(_mockGit.Object, _mockMapper.Object, _mockCopy.Object, _mockConfig.Object, nonExistentSource, dest);
             CommandResult result = await command.ExecuteAsync(CancellationToken.None);
 
             Assert.False(result.Success);
@@ -99,7 +104,7 @@ namespace WorktreeInitializer.Tests.Commands
             Directory.CreateDirectory(source);
             string nonExistentDest = Path.Combine(_tempDir, "no_such_dest");
 
-            InitCommand command = new InitCommand(_mockGit.Object, _mockMapper.Object, _mockCopy.Object, source, nonExistentDest);
+            InitCommand command = new InitCommand(_mockGit.Object, _mockMapper.Object, _mockCopy.Object, _mockConfig.Object, source, nonExistentDest);
             CommandResult result = await command.ExecuteAsync(CancellationToken.None);
 
             Assert.False(result.Success);
@@ -114,7 +119,7 @@ namespace WorktreeInitializer.Tests.Commands
             _mockGit.Setup(g => g.GetIgnoredFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new InvalidOperationException("git is not installed"));
 
-            InitCommand command = new InitCommand(_mockGit.Object, _mockMapper.Object, _mockCopy.Object, source, dest);
+            InitCommand command = new InitCommand(_mockGit.Object, _mockMapper.Object, _mockCopy.Object, _mockConfig.Object, source, dest);
             CommandResult result = await command.ExecuteAsync(CancellationToken.None);
 
             Assert.False(result.Success);
@@ -139,7 +144,7 @@ namespace WorktreeInitializer.Tests.Commands
             _mockCopy.Setup(c => c.CopyFileAsync("ok.log", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new FileCopyResult("ok.log", "s", "d", Success: true));
 
-            InitCommand command = new InitCommand(_mockGit.Object, _mockMapper.Object, _mockCopy.Object, source, dest);
+            InitCommand command = new InitCommand(_mockGit.Object, _mockMapper.Object, _mockCopy.Object, _mockConfig.Object, source, dest);
             CommandResult result = await command.ExecuteAsync(CancellationToken.None);
 
             Assert.False(result.Success);
@@ -165,12 +170,159 @@ namespace WorktreeInitializer.Tests.Commands
                 .ReturnsAsync((string rel, string src, string dst, CancellationToken _) =>
                     new FileCopyResult(rel, src, dst, Success: false, Error: "Permission denied"));
 
-            InitCommand command = new InitCommand(_mockGit.Object, _mockMapper.Object, _mockCopy.Object, source, dest);
+            InitCommand command = new InitCommand(_mockGit.Object, _mockMapper.Object, _mockCopy.Object, _mockConfig.Object, source, dest);
             CommandResult result = await command.ExecuteAsync(CancellationToken.None);
 
             Assert.False(result.Success);
             Assert.Contains("0", result.Message);
             Assert.Contains("2 failed", result.Message);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_WithCliIgnorePaths_SkipsMatchingFiles()
+        {
+            (string source, string dest) = CreateSourceAndDest();
+
+            _mockGit.Setup(g => g.GetIgnoredFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<string>
+                {
+                    "node_modules/lodash/index.js",
+                    "node_modules/express/index.js",
+                    "src/app.env",
+                    ".venv/bin/python"
+                });
+
+            _mockMapper.Setup(m => m.MapToFullPath(It.IsAny<string>(), It.IsAny<string>()))
+                .Returns<string, string>((rel, root) => Path.Combine(root, rel));
+
+            _mockCopy.Setup(c => c.CopyFileAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string rel, string src, string dst, CancellationToken _) =>
+                    new FileCopyResult(rel, src, dst, Success: true));
+
+            InitCommand command = new InitCommand(
+                _mockGit.Object, _mockMapper.Object, _mockCopy.Object, _mockConfig.Object,
+                source, dest,
+                ignorePaths: new List<string> { "node_modules", ".venv" });
+
+            CommandResult result = await command.ExecuteAsync(CancellationToken.None);
+
+            Assert.True(result.Success);
+            Assert.Contains("1", result.Message); // only src/app.env
+            _mockCopy.Verify(c => c.CopyFileAsync("src/app.env", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+            _mockCopy.Verify(c => c.CopyFileAsync(It.Is<string>(s => s.StartsWith("node_modules")), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_WithConfigIgnores_SkipsMatchingFiles()
+        {
+            (string source, string dest) = CreateSourceAndDest();
+
+            _mockGit.Setup(g => g.GetIgnoredFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<string> { "dist/bundle.js", "src/app.env" });
+
+            _mockConfig.Setup(c => c.GetIgnorePatternsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<string> { "dist" });
+
+            _mockMapper.Setup(m => m.MapToFullPath(It.IsAny<string>(), It.IsAny<string>()))
+                .Returns<string, string>((rel, root) => Path.Combine(root, rel));
+
+            _mockCopy.Setup(c => c.CopyFileAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string rel, string src, string dst, CancellationToken _) =>
+                    new FileCopyResult(rel, src, dst, Success: true));
+
+            InitCommand command = new InitCommand(
+                _mockGit.Object, _mockMapper.Object, _mockCopy.Object, _mockConfig.Object,
+                source, dest);
+
+            CommandResult result = await command.ExecuteAsync(CancellationToken.None);
+
+            Assert.True(result.Success);
+            _mockCopy.Verify(c => c.CopyFileAsync("src/app.env", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+            _mockCopy.Verify(c => c.CopyFileAsync("dist/bundle.js", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_CliAndConfigIgnoresMerged()
+        {
+            (string source, string dest) = CreateSourceAndDest();
+
+            _mockGit.Setup(g => g.GetIgnoredFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<string>
+                {
+                    "node_modules/pkg/index.js",
+                    "dist/bundle.js",
+                    "src/app.env"
+                });
+
+            _mockConfig.Setup(c => c.GetIgnorePatternsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<string> { "dist" });
+
+            _mockMapper.Setup(m => m.MapToFullPath(It.IsAny<string>(), It.IsAny<string>()))
+                .Returns<string, string>((rel, root) => Path.Combine(root, rel));
+
+            _mockCopy.Setup(c => c.CopyFileAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string rel, string src, string dst, CancellationToken _) =>
+                    new FileCopyResult(rel, src, dst, Success: true));
+
+            InitCommand command = new InitCommand(
+                _mockGit.Object, _mockMapper.Object, _mockCopy.Object, _mockConfig.Object,
+                source, dest,
+                ignorePaths: new List<string> { "node_modules" });
+
+            CommandResult result = await command.ExecuteAsync(CancellationToken.None);
+
+            Assert.True(result.Success);
+            Assert.Contains("1", result.Message); // only src/app.env
+            _mockCopy.Verify(c => c.CopyFileAsync("src/app.env", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+            _mockCopy.Verify(c => c.CopyFileAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_ExactPathMatch_IsIgnored()
+        {
+            (string source, string dest) = CreateSourceAndDest();
+
+            _mockGit.Setup(g => g.GetIgnoredFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<string> { "node_modules", "src/app.env" });
+
+            _mockMapper.Setup(m => m.MapToFullPath(It.IsAny<string>(), It.IsAny<string>()))
+                .Returns<string, string>((rel, root) => Path.Combine(root, rel));
+
+            _mockCopy.Setup(c => c.CopyFileAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string rel, string src, string dst, CancellationToken _) =>
+                    new FileCopyResult(rel, src, dst, Success: true));
+
+            InitCommand command = new InitCommand(
+                _mockGit.Object, _mockMapper.Object, _mockCopy.Object, _mockConfig.Object,
+                source, dest,
+                ignorePaths: new List<string> { "node_modules" });
+
+            CommandResult result = await command.ExecuteAsync(CancellationToken.None);
+
+            Assert.True(result.Success);
+            _mockCopy.Verify(c => c.CopyFileAsync("src/app.env", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+            _mockCopy.Verify(c => c.CopyFileAsync("node_modules", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_ConfigReadFails_ReturnsFailure()
+        {
+            (string source, string dest) = CreateSourceAndDest();
+
+            _mockGit.Setup(g => g.GetIgnoredFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<string> { "a.log" });
+
+            _mockConfig.Setup(c => c.GetIgnorePatternsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new InvalidOperationException("Failed to parse WorktreeConfig.json: invalid JSON"));
+
+            InitCommand command = new InitCommand(
+                _mockGit.Object, _mockMapper.Object, _mockCopy.Object, _mockConfig.Object,
+                source, dest);
+
+            CommandResult result = await command.ExecuteAsync(CancellationToken.None);
+
+            Assert.False(result.Success);
+            Assert.Contains("Failed to read config", result.Message);
         }
     }
 }

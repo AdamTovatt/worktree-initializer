@@ -10,6 +10,7 @@ namespace WorktreeInitializer.Tests.Integration
         private readonly GitIgnoredFileProvider _gitProvider;
         private readonly PathMapper _pathMapper;
         private readonly FileCopyService _fileCopyService;
+        private readonly WorktreeConfigProvider _configProvider;
 
         public FullWorkflowTests()
         {
@@ -19,6 +20,7 @@ namespace WorktreeInitializer.Tests.Integration
             _gitProvider = new GitIgnoredFileProvider();
             _pathMapper = new PathMapper();
             _fileCopyService = new FileCopyService();
+            _configProvider = new WorktreeConfigProvider();
         }
 
         public void Dispose()
@@ -88,7 +90,7 @@ namespace WorktreeInitializer.Tests.Integration
             await File.WriteAllTextAsync(Path.Combine(sourceDir, "app.log"), "log data");
             await File.WriteAllTextAsync(Path.Combine(sourceDir, "secrets.env"), "API_KEY=abc123");
 
-            InitCommand command = new InitCommand(_gitProvider, _pathMapper, _fileCopyService, sourceDir, destDir);
+            InitCommand command = new InitCommand(_gitProvider, _pathMapper, _fileCopyService, _configProvider, sourceDir, destDir);
             CommandResult result = await command.ExecuteAsync(CancellationToken.None);
 
             Assert.True(result.Success);
@@ -114,7 +116,7 @@ namespace WorktreeInitializer.Tests.Integration
             Directory.CreateDirectory(objDir);
             await File.WriteAllTextAsync(Path.Combine(objDir, "project.assets.json"), "{}");
 
-            InitCommand command = new InitCommand(_gitProvider, _pathMapper, _fileCopyService, sourceDir, destDir);
+            InitCommand command = new InitCommand(_gitProvider, _pathMapper, _fileCopyService, _configProvider, sourceDir, destDir);
             CommandResult result = await command.ExecuteAsync(CancellationToken.None);
 
             Assert.True(result.Success);
@@ -131,7 +133,7 @@ namespace WorktreeInitializer.Tests.Integration
 
             // Don't create any ignored files — just the tracked ones from CreateSourceRepo
 
-            InitCommand command = new InitCommand(_gitProvider, _pathMapper, _fileCopyService, sourceDir, destDir);
+            InitCommand command = new InitCommand(_gitProvider, _pathMapper, _fileCopyService, _configProvider, sourceDir, destDir);
             CommandResult result = await command.ExecuteAsync(CancellationToken.None);
 
             Assert.True(result.Success);
@@ -148,7 +150,7 @@ namespace WorktreeInitializer.Tests.Integration
             // Create an ignored file
             await File.WriteAllTextAsync(Path.Combine(sourceDir, "debug.log"), "some log");
 
-            InitCommand command = new InitCommand(_gitProvider, _pathMapper, _fileCopyService, sourceDir, destDir);
+            InitCommand command = new InitCommand(_gitProvider, _pathMapper, _fileCopyService, _configProvider, sourceDir, destDir);
             CommandResult result = await command.ExecuteAsync(CancellationToken.None);
 
             Assert.True(result.Success);
@@ -156,6 +158,106 @@ namespace WorktreeInitializer.Tests.Integration
             Assert.False(File.Exists(Path.Combine(destDir, "Program.cs")));
             // The ignored file should be copied
             Assert.True(File.Exists(Path.Combine(destDir, "debug.log")));
+        }
+
+        [Fact]
+        public async Task FullWorkflow_CliIgnore_SkipsMatchingFiles()
+        {
+            string sourceDir = await CreateSourceRepo();
+            string destDir = Path.Combine(_tempDir, "dest");
+            Directory.CreateDirectory(destDir);
+
+            // Create ignored files: bin/ and obj/ are in .gitignore, plus a .log file
+            string binDir = Path.Combine(sourceDir, "bin");
+            Directory.CreateDirectory(binDir);
+            await File.WriteAllTextAsync(Path.Combine(binDir, "app.dll"), "binary");
+
+            string objDir = Path.Combine(sourceDir, "obj");
+            Directory.CreateDirectory(objDir);
+            await File.WriteAllTextAsync(Path.Combine(objDir, "cache.json"), "{}");
+
+            await File.WriteAllTextAsync(Path.Combine(sourceDir, "app.log"), "log data");
+
+            // Use --ignore to skip bin and obj
+            InitCommand command = new InitCommand(
+                _gitProvider, _pathMapper, _fileCopyService, _configProvider,
+                sourceDir, destDir,
+                ignorePaths: new List<string> { "bin", "obj" });
+
+            CommandResult result = await command.ExecuteAsync(CancellationToken.None);
+
+            Assert.True(result.Success);
+            // app.log should be copied
+            Assert.True(File.Exists(Path.Combine(destDir, "app.log")));
+            // bin/ and obj/ should be skipped
+            Assert.False(File.Exists(Path.Combine(destDir, "bin", "app.dll")));
+            Assert.False(File.Exists(Path.Combine(destDir, "obj", "cache.json")));
+        }
+
+        [Fact]
+        public async Task FullWorkflow_WorktreeConfigJson_SkipsMatchingFiles()
+        {
+            string sourceDir = await CreateSourceRepo();
+            string destDir = Path.Combine(_tempDir, "dest");
+            Directory.CreateDirectory(destDir);
+
+            // Create ignored files
+            string binDir = Path.Combine(sourceDir, "bin");
+            Directory.CreateDirectory(binDir);
+            await File.WriteAllTextAsync(Path.Combine(binDir, "app.dll"), "binary");
+
+            await File.WriteAllTextAsync(Path.Combine(sourceDir, "app.log"), "log data");
+
+            // Place a WorktreeConfig.json that ignores bin
+            await File.WriteAllTextAsync(
+                Path.Combine(sourceDir, "WorktreeConfig.json"),
+                """{"ignores": ["bin"]}""");
+
+            InitCommand command = new InitCommand(
+                _gitProvider, _pathMapper, _fileCopyService, _configProvider,
+                sourceDir, destDir);
+
+            CommandResult result = await command.ExecuteAsync(CancellationToken.None);
+
+            Assert.True(result.Success);
+            Assert.True(File.Exists(Path.Combine(destDir, "app.log")));
+            Assert.False(File.Exists(Path.Combine(destDir, "bin", "app.dll")));
+        }
+
+        [Fact]
+        public async Task FullWorkflow_CliAndConfigIgnoresMerged()
+        {
+            string sourceDir = await CreateSourceRepo();
+            string destDir = Path.Combine(_tempDir, "dest");
+            Directory.CreateDirectory(destDir);
+
+            // Create ignored files under bin/, obj/, and a .log
+            string binDir = Path.Combine(sourceDir, "bin");
+            Directory.CreateDirectory(binDir);
+            await File.WriteAllTextAsync(Path.Combine(binDir, "app.dll"), "binary");
+
+            string objDir = Path.Combine(sourceDir, "obj");
+            Directory.CreateDirectory(objDir);
+            await File.WriteAllTextAsync(Path.Combine(objDir, "cache.json"), "{}");
+
+            await File.WriteAllTextAsync(Path.Combine(sourceDir, "app.log"), "log data");
+
+            // Config ignores bin, CLI ignores obj — both should be skipped
+            await File.WriteAllTextAsync(
+                Path.Combine(sourceDir, "WorktreeConfig.json"),
+                """{"ignores": ["bin"]}""");
+
+            InitCommand command = new InitCommand(
+                _gitProvider, _pathMapper, _fileCopyService, _configProvider,
+                sourceDir, destDir,
+                ignorePaths: new List<string> { "obj" });
+
+            CommandResult result = await command.ExecuteAsync(CancellationToken.None);
+
+            Assert.True(result.Success);
+            Assert.True(File.Exists(Path.Combine(destDir, "app.log")));
+            Assert.False(File.Exists(Path.Combine(destDir, "bin", "app.dll")));
+            Assert.False(File.Exists(Path.Combine(destDir, "obj", "cache.json")));
         }
     }
 }

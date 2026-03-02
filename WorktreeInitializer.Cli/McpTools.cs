@@ -14,15 +14,18 @@ namespace WorktreeInitializer.Cli
         private readonly IGitIgnoredFileProvider _gitIgnoredFileProvider;
         private readonly IPathMapper _pathMapper;
         private readonly IFileCopyService _fileCopyService;
+        private readonly IWorktreeConfigProvider _configProvider;
 
         public McpTools(
             IGitIgnoredFileProvider gitIgnoredFileProvider,
             IPathMapper pathMapper,
-            IFileCopyService fileCopyService)
+            IFileCopyService fileCopyService,
+            IWorktreeConfigProvider configProvider)
         {
             _gitIgnoredFileProvider = gitIgnoredFileProvider;
             _pathMapper = pathMapper;
             _fileCopyService = fileCopyService;
+            _configProvider = configProvider;
         }
 
         [McpServerTool(Name = "wi_init")]
@@ -32,9 +35,14 @@ namespace WorktreeInitializer.Cli
             string sourcePath,
             [Description("The path to the destination directory")]
             string destinationPath,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            [Description("Optional list of path prefixes to exclude from copying (e.g. node_modules, .venv)")]
+            string[]? ignorePaths = null)
         {
-            InitCommand command = new InitCommand(_gitIgnoredFileProvider, _pathMapper, _fileCopyService, sourcePath, destinationPath);
+            IReadOnlyList<string>? ignoreList = ignorePaths is { Length: > 0 } ? ignorePaths : null;
+            InitCommand command = new InitCommand(
+                _gitIgnoredFileProvider, _pathMapper, _fileCopyService, _configProvider,
+                sourcePath, destinationPath, ignoreList);
             CommandResult result = await command.ExecuteAsync(cancellationToken);
             return FormatResult(result);
         }
