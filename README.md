@@ -50,8 +50,8 @@ For Cursor or other MCP clients, add this to your MCP configuration:
 ## Usage
 
 ```bash
-wi init <source-path> <destination-path>    # Copy gitignored files from source to destination
-wi help                                      # Show help information
+wi init <source-path> <destination-path> [--ignore <path>]...
+wi help
 ```
 
 ### Examples
@@ -60,12 +60,29 @@ wi help                                      # Show help information
 # Copy gitignored files from your main repo to a new worktree
 wi init C:\code\myproject C:\code\myproject-worktree
 
+# Exclude specific directories from copying
+wi init ./myproject ./myproject-worktree --ignore node_modules --ignore .venv
+
 # Works with paths containing spaces (just quote them)
 wi init "/home/user/my project" "/home/user/my project-wt"
 
 # Unix paths work the same way
 wi init ~/code/myproject ~/code/myproject-worktree
 ```
+
+### WorktreeConfig.json
+
+You can place a `WorktreeConfig.json` file in the source repo root to define default ignores:
+
+```json
+{
+  "ignores": ["node_modules", ".venv", "dist"]
+}
+```
+
+- The file is optional — if missing, no default ignores are applied
+- If present but malformed, an error is reported
+- CLI `--ignore` flags are merged with config file ignores (union of both)
 
 ## Behavior
 
@@ -101,7 +118,7 @@ wi --mcp
 
 When running as an MCP server, the following tools are available:
 
-- `wi_init(sourcePath, destinationPath)` - Copy all gitignored files from source to destination
+- `wi_init(sourcePath, destinationPath, ignorePaths?)` - Copy all gitignored files from source to destination
 - `wi_help()` - Get help
 
 ## Development
