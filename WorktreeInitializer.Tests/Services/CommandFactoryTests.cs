@@ -94,5 +94,34 @@ namespace WorktreeInitializer.Tests.Services
             ICommand command = _factory.CreateCommand(new[] { "init", "/source", "/dest", "--ignore" });
             Assert.IsType<InitCommand>(command);
         }
+
+        [Fact]
+        public void CreateCommand_Init_WithIncludeFlag_ReturnsInitCommand()
+        {
+            ICommand command = _factory.CreateCommand(new[] { "init", "/source", "/dest", "--include", "node_modules" });
+            Assert.IsType<InitCommand>(command);
+        }
+
+        [Fact]
+        public void CreateCommand_Init_WithMultipleIncludeFlags_ReturnsInitCommand()
+        {
+            ICommand command = _factory.CreateCommand(new[] { "init", "/source", "/dest", "--include", "node_modules", "--include", "dist" });
+            Assert.IsType<InitCommand>(command);
+        }
+
+        [Fact]
+        public void CreateCommand_Init_WithIgnoreAndIncludeFlags_ReturnsInitCommand()
+        {
+            ICommand command = _factory.CreateCommand(new[] { "init", "/source", "/dest", "--ignore", "node_modules", "--include", "node_modules" });
+            Assert.IsType<InitCommand>(command);
+        }
+
+        [Fact]
+        public void CreateCommand_Init_IncludeFlagWithoutValue_IsSkipped()
+        {
+            // --include at end with no value should not crash
+            ICommand command = _factory.CreateCommand(new[] { "init", "/source", "/dest", "--include" });
+            Assert.IsType<InitCommand>(command);
+        }
     }
 }

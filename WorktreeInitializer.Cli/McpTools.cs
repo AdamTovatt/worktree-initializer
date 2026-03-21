@@ -37,12 +37,15 @@ namespace WorktreeInitializer.Cli
             string destinationPath,
             CancellationToken cancellationToken,
             [Description("Optional list of path prefixes to exclude from copying (e.g. node_modules, .venv)")]
-            string[]? ignorePaths = null)
+            string[]? ignorePaths = null,
+            [Description("Optional list of path prefixes to re-include even if they appear in ignore lists (include wins over ignore)")]
+            string[]? includePaths = null)
         {
             IReadOnlyList<string>? ignoreList = ignorePaths is { Length: > 0 } ? ignorePaths : null;
+            IReadOnlyList<string>? includeList = includePaths is { Length: > 0 } ? includePaths : null;
             InitCommand command = new InitCommand(
                 _gitIgnoredFileProvider, _pathMapper, _fileCopyService, _configProvider,
-                sourcePath, destinationPath, ignoreList);
+                sourcePath, destinationPath, ignoreList, includeList);
             CommandResult result = await command.ExecuteAsync(cancellationToken);
             return FormatResult(result);
         }

@@ -42,7 +42,7 @@ namespace WorktreeInitializer.Core.Services
                         throw new ArgumentException("Usage: wi init <source-path> <destination-path>");
                     }
 
-                    List<string> ignorePaths = ParseIgnoreFlags(args, startIndex: 3);
+                    (List<string> ignorePaths, List<string> includePaths) = ParseFlags(args, startIndex: 3);
 
                     return new InitCommand(
                         _gitIgnoredFileProvider,
@@ -52,6 +52,7 @@ namespace WorktreeInitializer.Core.Services
                         args[1],
                         args[2],
                         ignorePaths.Count > 0 ? ignorePaths : null,
+                        includePaths.Count > 0 ? includePaths : null,
                         progress);
 
                 case "help":
@@ -64,9 +65,10 @@ namespace WorktreeInitializer.Core.Services
             }
         }
 
-        private static List<string> ParseIgnoreFlags(string[] args, int startIndex)
+        private static (List<string> ignorePaths, List<string> includePaths) ParseFlags(string[] args, int startIndex)
         {
             List<string> ignorePaths = new List<string>();
+            List<string> includePaths = new List<string>();
 
             for (int i = startIndex; i < args.Length; i++)
             {
@@ -75,9 +77,14 @@ namespace WorktreeInitializer.Core.Services
                     ignorePaths.Add(args[i + 1]);
                     i++; // skip the value
                 }
+                else if (args[i] == "--include" && i + 1 < args.Length)
+                {
+                    includePaths.Add(args[i + 1]);
+                    i++; // skip the value
+                }
             }
 
-            return ignorePaths;
+            return (ignorePaths, includePaths);
         }
     }
 }

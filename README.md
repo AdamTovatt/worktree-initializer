@@ -50,7 +50,7 @@ For Cursor or other MCP clients, add this to your MCP configuration:
 ## Usage
 
 ```bash
-wi init <source-path> <destination-path> [--ignore <path>]...
+wi init <source-path> <destination-path> [--ignore <path>]... [--include <path>]...
 wi help
 ```
 
@@ -62,6 +62,9 @@ wi init C:\code\myproject C:\code\myproject-worktree
 
 # Exclude specific directories from copying
 wi init ./myproject ./myproject-worktree --ignore node_modules --ignore .venv
+
+# Re-include a path that would otherwise be ignored (include wins over ignore)
+wi init ./myproject ./myproject-worktree --ignore node_modules --include node_modules
 
 # Works with paths containing spaces (just quote them)
 wi init "/home/user/my project" "/home/user/my project-wt"
@@ -83,6 +86,7 @@ You can place a `WorktreeConfig.json` file in the source repo root to define def
 - The file is optional — if missing, no default ignores are applied
 - If present but malformed, an error is reported
 - CLI `--ignore` flags are merged with config file ignores (union of both)
+- `--include` overrides both CLI `--ignore` and config file ignores (include always wins)
 
 ## Behavior
 
@@ -118,7 +122,7 @@ wi --mcp
 
 When running as an MCP server, the following tools are available:
 
-- `wi_init(sourcePath, destinationPath, ignorePaths?)` - Copy all gitignored files from source to destination
+- `wi_init(sourcePath, destinationPath, ignorePaths?, includePaths?)` - Copy all gitignored files from source to destination
 - `wi_help()` - Get help
 
 ## Development

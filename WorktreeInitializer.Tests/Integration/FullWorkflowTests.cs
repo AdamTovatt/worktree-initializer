@@ -259,5 +259,37 @@ namespace WorktreeInitializer.Tests.Integration
             Assert.False(File.Exists(Path.Combine(destDir, "bin", "app.dll")));
             Assert.False(File.Exists(Path.Combine(destDir, "obj", "cache.json")));
         }
+        [Fact]
+        public async Task FullWorkflow_ConfigIgnoreWithCliInclude_IncludeWins()
+        {
+            string sourceDir = await CreateSourceRepo();
+            string destDir = Path.Combine(_tempDir, "dest");
+            Directory.CreateDirectory(destDir);
+
+            // Create ignored files under bin/ and a .log
+            string binDir = Path.Combine(sourceDir, "bin");
+            Directory.CreateDirectory(binDir);
+            await File.WriteAllTextAsync(Path.Combine(binDir, "app.dll"), "binary");
+
+            await File.WriteAllTextAsync(Path.Combine(sourceDir, "app.log"), "log data");
+
+            // Config ignores bin
+            await File.WriteAllTextAsync(
+                Path.Combine(sourceDir, "WorktreeConfig.json"),
+                """{"ignores": ["bin"]}""");
+
+            // CLI --include re-includes bin
+            InitCommand command = new InitCommand(
+                _gitProvider, _pathMapper, _fileCopyService, _configProvider,
+                sourceDir, destDir,
+                includePaths: new List<string> { "bin" });
+
+            CommandResult result = await command.ExecuteAsync(CancellationToken.None);
+
+            Assert.True(result.Success);
+            // bin should be copied because include wins over config ignore
+            Assert.True(File.Exists(Path.Combine(destDir, "bin", "app.dll")));
+            Assert.True(File.Exists(Path.Combine(destDir, "app.log")));
+        }
     }
 }

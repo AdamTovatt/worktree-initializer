@@ -16,6 +16,7 @@ namespace WorktreeInitializer.Core.Commands
         private readonly string _sourcePath;
         private readonly string _destinationPath;
         private readonly IReadOnlyList<string>? _ignorePaths;
+        private readonly IReadOnlyList<string>? _includePaths;
         private readonly IProgress<string>? _progress;
 
         public InitCommand(
@@ -26,6 +27,7 @@ namespace WorktreeInitializer.Core.Commands
             string sourcePath,
             string destinationPath,
             IReadOnlyList<string>? ignorePaths = null,
+            IReadOnlyList<string>? includePaths = null,
             IProgress<string>? progress = null)
         {
             _gitIgnoredFileProvider = gitIgnoredFileProvider;
@@ -35,6 +37,7 @@ namespace WorktreeInitializer.Core.Commands
             _sourcePath = sourcePath;
             _destinationPath = destinationPath;
             _ignorePaths = ignorePaths;
+            _includePaths = includePaths;
             _progress = progress;
         }
 
@@ -87,6 +90,15 @@ namespace WorktreeInitializer.Core.Commands
             catch (InvalidOperationException ex)
             {
                 return new CommandResult(Success: false, Message: $"Failed to read config: {ex.Message}");
+            }
+
+            // --include wins: remove any patterns that appear in the include list
+            if (_includePaths != null)
+            {
+                foreach (string pattern in _includePaths)
+                {
+                    ignorePatterns.Remove(pattern);
+                }
             }
 
             // Filter out files matching ignore patterns
