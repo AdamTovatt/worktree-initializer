@@ -156,4 +156,73 @@ namespace WorktreeInitializer.Tests.Services
             Assert.Contains("cache.tmp", files);
         }
     }
+
+    public class GitIgnoredFileProviderParseOutputTests
+    {
+        [Fact]
+        public void ParseOutput_SimplePaths_ReturnsPaths()
+        {
+            string output = "src/file.cs\0build/output.dll\0";
+
+            List<string> result = GitIgnoredFileProvider.ParseOutput(output);
+
+            Assert.Equal(2, result.Count);
+            Assert.Equal("src/file.cs", result[0]);
+            Assert.Equal("build/output.dll", result[1]);
+        }
+
+        [Fact]
+        public void ParseOutput_EmptyOutput_ReturnsEmptyList()
+        {
+            string output = "";
+
+            List<string> result = GitIgnoredFileProvider.ParseOutput(output);
+
+            Assert.Empty(result);
+        }
+
+        [Fact]
+        public void ParseOutput_BackslashesInPaths_NormalizesToForwardSlashes()
+        {
+            string output = "obj\\Debug\\file.props\0";
+
+            List<string> result = GitIgnoredFileProvider.ParseOutput(output);
+
+            Assert.Single(result);
+            Assert.Equal("obj/Debug/file.props", result[0]);
+        }
+
+        [Fact]
+        public void ParseOutput_DuplicatePathsAfterNormalization_Deduplicates()
+        {
+            string output = "obj/Debug/file.props\0obj\\Debug\\file.props\0";
+
+            List<string> result = GitIgnoredFileProvider.ParseOutput(output);
+
+            Assert.Single(result);
+            Assert.Equal("obj/Debug/file.props", result[0]);
+        }
+
+        [Fact]
+        public void ParseOutput_MixedSeparators_NormalizesAll()
+        {
+            string output = "obj\\Debug/\\package.g.props\0obj/Debug/package.g.props\0";
+
+            List<string> result = GitIgnoredFileProvider.ParseOutput(output);
+
+            Assert.Single(result);
+            Assert.Equal("obj/Debug/package.g.props", result[0]);
+        }
+
+        [Fact]
+        public void ParseOutput_TrailingNullByte_DoesNotCreateEmptyEntry()
+        {
+            string output = "file.txt\0";
+
+            List<string> result = GitIgnoredFileProvider.ParseOutput(output);
+
+            Assert.Single(result);
+            Assert.Equal("file.txt", result[0]);
+        }
+    }
 }

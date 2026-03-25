@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using WorktreeInitializer.Core.Interfaces;
 
 namespace WorktreeInitializer.Core.Services
@@ -13,7 +14,7 @@ namespace WorktreeInitializer.Core.Services
             ProcessStartInfo startInfo = new ProcessStartInfo
             {
                 FileName = "git",
-                Arguments = "ls-files --others --ignored --exclude-standard",
+                Arguments = "ls-files --others --ignored --exclude-standard -z",
                 WorkingDirectory = repoPath,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -43,14 +44,19 @@ namespace WorktreeInitializer.Core.Services
                     throw new InvalidOperationException($"git exited with code {process.ExitCode}: {error.Trim()}");
                 }
 
-                List<string> files = output
-                    .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                    .Select(line => line.TrimEnd('\r'))
-                    .Where(line => !string.IsNullOrWhiteSpace(line))
-                    .ToList();
-
-                return files;
+                return ParseOutput(output);
             }
+        }
+        public static List<string> ParseOutput(string output)
+        {
+            List<string> files = output
+                .Split('\0', StringSplitOptions.RemoveEmptyEntries)
+                .Select(path => Regex.Replace(path.Replace('\\', '/'), "/+", "/"))
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct()
+                .ToList();
+
+            return files;
         }
     }
 }
