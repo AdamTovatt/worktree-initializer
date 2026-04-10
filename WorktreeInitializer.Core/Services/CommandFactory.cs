@@ -12,17 +12,23 @@ namespace WorktreeInitializer.Core.Services
         private readonly IPathMapper _pathMapper;
         private readonly IFileCopyService _fileCopyService;
         private readonly IWorktreeConfigProvider _configProvider;
+        private readonly IWorktreeDetector _worktreeDetector;
+        private readonly Func<string> _getWorkingDirectory;
 
         public CommandFactory(
             IGitIgnoredFileProvider gitIgnoredFileProvider,
             IPathMapper pathMapper,
             IFileCopyService fileCopyService,
-            IWorktreeConfigProvider configProvider)
+            IWorktreeConfigProvider configProvider,
+            IWorktreeDetector worktreeDetector,
+            Func<string>? getWorkingDirectory = null)
         {
             _gitIgnoredFileProvider = gitIgnoredFileProvider;
             _pathMapper = pathMapper;
             _fileCopyService = fileCopyService;
             _configProvider = configProvider;
+            _worktreeDetector = worktreeDetector;
+            _getWorkingDirectory = getWorkingDirectory ?? Directory.GetCurrentDirectory;
         }
 
         public ICommand CreateCommand(string[] args, IProgress<string>? progress = null)
@@ -37,23 +43,7 @@ namespace WorktreeInitializer.Core.Services
             switch (command)
             {
                 case "init":
-                    if (args.Length < 3)
-                    {
-                        throw new ArgumentException("Usage: wi init <source-path> <destination-path>");
-                    }
-
-                    (List<string> ignorePaths, List<string> includePaths) = ParseFlags(args, startIndex: 3);
-
-                    return new InitCommand(
-                        _gitIgnoredFileProvider,
-                        _pathMapper,
-                        _fileCopyService,
-                        _configProvider,
-                        args[1],
-                        args[2],
-                        ignorePaths.Count > 0 ? ignorePaths : null,
-                        includePaths.Count > 0 ? includePaths : null,
-                        progress);
+                    return CreateInitCommand(args, progress);
 
                 case "help":
                 case "--help":
@@ -63,6 +53,63 @@ namespace WorktreeInitializer.Core.Services
                 default:
                     throw new ArgumentException($"Unknown command: '{command}'. Run 'wi help' for usage information.");
             }
+        }
+
+        private ICommand CreateInitCommand(string[] args, IProgress<string>? progress)
+        {
+            string sourcePath;
+            string destinationPath;
+            int flagStartIndex;
+
+            bool hasFirstPositional = args.Length >= 2 && !args[1].StartsWith("-");
+            bool hasSecondPositional = args.Length >= 3 && !args[2].StartsWith("-");
+
+            if (hasFirstPositional && hasSecondPositional)
+            {
+                // Explicit paths: wi init <source> <dest> [flags...]
+                sourcePath = args[1];
+                destinationPath = args[2];
+                flagStartIndex = 3;
+            }
+            else if (!hasFirstPositional)
+            {
+                // No paths: wi init [flags...] — auto-detect
+                string workingDirectory = _getWorkingDirectory();
+                try
+                {
+                    sourcePath = _worktreeDetector
+                        .DetectSourceRepoAsync(workingDirectory, CancellationToken.None)
+                        .GetAwaiter().GetResult();
+                }
+                catch (InvalidOperationException ex)
+                {
+                    throw new ArgumentException(ex.Message, ex);
+                }
+
+                destinationPath = workingDirectory;
+                flagStartIndex = 1;
+            }
+            else
+            {
+                // One positional arg — ambiguous
+                throw new ArgumentException(
+                    "Expected two paths or none.\n" +
+                    "Usage: wi init <source-path> <destination-path>\n" +
+                    "   or: wi init  (auto-detect when inside a worktree)");
+            }
+
+            (List<string> ignorePaths, List<string> includePaths) = ParseFlags(args, flagStartIndex);
+
+            return new InitCommand(
+                _gitIgnoredFileProvider,
+                _pathMapper,
+                _fileCopyService,
+                _configProvider,
+                sourcePath,
+                destinationPath,
+                ignorePaths.Count > 0 ? ignorePaths : null,
+                includePaths.Count > 0 ? includePaths : null,
+                progress);
         }
 
         private static (List<string> ignorePaths, List<string> includePaths) ParseFlags(string[] args, int startIndex)

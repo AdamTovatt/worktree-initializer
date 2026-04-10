@@ -11,16 +11,19 @@ namespace WorktreeInitializer.Tests.Integration
         private readonly PathMapper _pathMapper;
         private readonly FileCopyService _fileCopyService;
         private readonly WorktreeConfigProvider _configProvider;
+        private readonly WorktreeDetector _worktreeDetector;
 
         public FullWorkflowTests()
         {
             _tempDir = Path.Combine(Path.GetTempPath(), "wi_integration_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_tempDir);
 
-            _gitProvider = new GitIgnoredFileProvider();
+            GitProcessRunner gitRunner = new GitProcessRunner();
+            _gitProvider = new GitIgnoredFileProvider(gitRunner);
             _pathMapper = new PathMapper();
             _fileCopyService = new FileCopyService();
             _configProvider = new WorktreeConfigProvider();
+            _worktreeDetector = new WorktreeDetector(gitRunner);
         }
 
         public void Dispose()
@@ -290,6 +293,35 @@ namespace WorktreeInitializer.Tests.Integration
             // bin should be copied because include wins over config ignore
             Assert.True(File.Exists(Path.Combine(destDir, "bin", "app.dll")));
             Assert.True(File.Exists(Path.Combine(destDir, "app.log")));
+        }
+
+        [Fact]
+        public async Task FullWorkflow_AutoDetect_InWorktree_CopiesIgnoredFiles()
+        {
+            string sourceDir = await CreateSourceRepo();
+
+            // Create ignored files in source
+            await File.WriteAllTextAsync(Path.Combine(sourceDir, "app.log"), "log data");
+            await File.WriteAllTextAsync(Path.Combine(sourceDir, "secrets.env"), "API_KEY=abc123");
+
+            // Create a worktree from the source repo
+            string worktreeDir = Path.Combine(_tempDir, "worktree");
+            await RunGitAsync(sourceDir, $"worktree add {worktreeDir} -b test-branch");
+
+            // Go through CommandFactory with auto-detect (no paths)
+            // Inject the worktree path as the working directory instead of mutating global state
+            CommandFactory factory = new CommandFactory(
+                _gitProvider, _pathMapper, _fileCopyService, _configProvider, _worktreeDetector,
+                getWorkingDirectory: () => worktreeDir);
+
+            ICommand command = factory.CreateCommand(new[] { "init" });
+            CommandResult result = await command.ExecuteAsync(CancellationToken.None);
+
+            Assert.True(result.Success);
+            Assert.True(File.Exists(Path.Combine(worktreeDir, "app.log")));
+            Assert.True(File.Exists(Path.Combine(worktreeDir, "secrets.env")));
+            Assert.Equal("log data", await File.ReadAllTextAsync(Path.Combine(worktreeDir, "app.log")));
+            Assert.Equal("API_KEY=abc123", await File.ReadAllTextAsync(Path.Combine(worktreeDir, "secrets.env")));
         }
     }
 }

@@ -7,6 +7,7 @@ namespace WorktreeInitializer.Tests.Services
 {
     public class CommandFactoryTests
     {
+        private readonly Mock<IWorktreeDetector> _mockDetector;
         private readonly CommandFactory _factory;
 
         public CommandFactoryTests()
@@ -15,7 +16,8 @@ namespace WorktreeInitializer.Tests.Services
             Mock<IPathMapper> mockMapper = new Mock<IPathMapper>();
             Mock<IFileCopyService> mockCopy = new Mock<IFileCopyService>();
             Mock<IWorktreeConfigProvider> mockConfig = new Mock<IWorktreeConfigProvider>();
-            _factory = new CommandFactory(mockGit.Object, mockMapper.Object, mockCopy.Object, mockConfig.Object);
+            _mockDetector = new Mock<IWorktreeDetector>();
+            _factory = new CommandFactory(mockGit.Object, mockMapper.Object, mockCopy.Object, mockConfig.Object, _mockDetector.Object);
         }
 
         [Fact]
@@ -51,6 +53,7 @@ namespace WorktreeInitializer.Tests.Services
         {
             ICommand command = _factory.CreateCommand(new[] { "init", "/source", "/dest" });
             Assert.IsType<InitCommand>(command);
+            _mockDetector.Verify(d => d.DetectSourceRepoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never());
         }
 
         [Fact]
@@ -61,9 +64,45 @@ namespace WorktreeInitializer.Tests.Services
         }
 
         [Fact]
-        public void CreateCommand_Init_MissingPaths_ThrowsArgumentException()
+        public void CreateCommand_Init_NoPaths_AutoDetectSucceeds_ReturnsInitCommand()
         {
-            Assert.Throws<ArgumentException>(() => _factory.CreateCommand(new[] { "init" }));
+            _mockDetector
+                .Setup(d => d.DetectSourceRepoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync("/detected/source");
+
+            ICommand command = _factory.CreateCommand(new[] { "init" });
+            Assert.IsType<InitCommand>(command);
+            _mockDetector.Verify(d => d.DetectSourceRepoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once());
+        }
+
+        [Fact]
+        public void CreateCommand_Init_NoPaths_AutoDetectFails_ThrowsArgumentException()
+        {
+            _mockDetector
+                .Setup(d => d.DetectSourceRepoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new InvalidOperationException(
+                    "Not inside a git repository. Use explicit paths: wi init <source-path> <destination-path>"));
+
+            ArgumentException ex = Assert.Throws<ArgumentException>(() => _factory.CreateCommand(new[] { "init" }));
+            Assert.Contains("wi init <source-path> <destination-path>", ex.Message);
+        }
+
+        [Fact]
+        public void CreateCommand_Init_NoPathsWithFlags_AutoDetectSucceeds_ReturnsInitCommand()
+        {
+            _mockDetector
+                .Setup(d => d.DetectSourceRepoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync("/detected/source");
+
+            ICommand command = _factory.CreateCommand(new[] { "init", "--ignore", "node_modules" });
+            Assert.IsType<InitCommand>(command);
+            _mockDetector.Verify(d => d.DetectSourceRepoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once());
+        }
+
+        [Fact]
+        public void CreateCommand_Init_OnePositionalArg_ThrowsArgumentException()
+        {
+            Assert.Throws<ArgumentException>(() => _factory.CreateCommand(new[] { "init", "/source" }));
         }
 
         [Fact]

@@ -5,7 +5,7 @@ namespace WorktreeInitializer.Tests.Services
     public class GitIgnoredFileProviderTests : IDisposable
     {
         private readonly string _tempDir;
-        private readonly GitIgnoredFileProvider _provider = new GitIgnoredFileProvider();
+        private readonly GitIgnoredFileProvider _provider = new GitIgnoredFileProvider(new GitProcessRunner());
 
         public GitIgnoredFileProviderTests()
         {

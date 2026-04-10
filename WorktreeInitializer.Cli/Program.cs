@@ -91,10 +91,12 @@ namespace WorktreeInitializer.Cli
 
         private static void ConfigureServices(IServiceCollection services)
         {
+            services.AddSingleton<IGitProcessRunner, GitProcessRunner>();
             services.AddSingleton<IGitIgnoredFileProvider, GitIgnoredFileProvider>();
             services.AddSingleton<IPathMapper, PathMapper>();
             services.AddSingleton<IFileCopyService, FileCopyService>();
             services.AddSingleton<IWorktreeConfigProvider, WorktreeConfigProvider>();
+            services.AddSingleton<IWorktreeDetector, WorktreeDetector>();
             services.AddSingleton<ICommandFactory, CommandFactory>();
         }
     }
