@@ -50,6 +50,7 @@ For Cursor or other MCP clients, add this to your MCP configuration:
 ## Usage
 
 ```bash
+wi init [--ignore <path>]... [--include <path>]...
 wi init <source-path> <destination-path> [--ignore <path>]... [--include <path>]...
 wi help
 ```
@@ -57,7 +58,11 @@ wi help
 ### Examples
 
 ```bash
-# Copy gitignored files from your main repo to a new worktree
+# Auto-detect: run inside a worktree to automatically find the source repo
+cd ~/code/myproject-worktree
+wi init
+
+# Explicit paths: specify source and destination directly
 wi init C:\code\myproject C:\code\myproject-worktree
 
 # Exclude specific directories from copying
@@ -66,12 +71,19 @@ wi init ./myproject ./myproject-worktree --ignore node_modules --ignore .venv
 # Re-include a path that would otherwise be ignored (include wins over ignore)
 wi init ./myproject ./myproject-worktree --ignore node_modules --include node_modules
 
+# Auto-detect with flags
+wi init --ignore node_modules --ignore .venv
+
 # Works with paths containing spaces (just quote them)
 wi init "/home/user/my project" "/home/user/my project-wt"
 
 # Unix paths work the same way
 wi init ~/code/myproject ~/code/myproject-worktree
 ```
+
+### Auto-detect mode
+
+When you run `wi init` with no paths inside a git worktree, it automatically detects the main repository as the source and uses the current directory as the destination. This is the simplest way to use the tool — just `cd` into your worktree and run `wi init`.
 
 ### WorktreeConfig.json
 
@@ -122,7 +134,7 @@ wi --mcp
 
 When running as an MCP server, the following tools are available:
 
-- `wi_init(sourcePath, destinationPath, ignorePaths?, includePaths?)` - Copy all gitignored files from source to destination
+- `wi_init(sourcePath?, destinationPath?, ignorePaths?, includePaths?)` - Copy all gitignored files from source to destination (paths auto-detected when omitted and server is running inside a worktree)
 - `wi_help()` - Get help
 
 ## Development
