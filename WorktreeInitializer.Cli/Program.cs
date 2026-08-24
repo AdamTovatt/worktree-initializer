@@ -96,6 +96,7 @@ namespace WorktreeInitializer.Cli
             services.AddSingleton<IPathMapper, PathMapper>();
             services.AddSingleton<IFileCopyService, FileCopyService>();
             services.AddSingleton<IWorktreeConfigProvider, WorktreeConfigProvider>();
+            services.AddSingleton<IShellCommandRunner, ShellCommandRunner>();
             services.AddSingleton<IWorktreeDetector, WorktreeDetector>();
             services.AddSingleton<ICommandFactory, CommandFactory>();
         }

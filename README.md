@@ -87,18 +87,37 @@ When you run `wi init` with no paths inside a git worktree, it automatically det
 
 ### WorktreeConfig.json
 
-You can place a `WorktreeConfig.json` file in the source repo root to define default ignores:
+You can place a `WorktreeConfig.json` file in the source repo root to define default ignores and
+commands to run once the copy has finished:
 
 ```json
 {
-  "ignores": ["node_modules", ".venv", "dist"]
+  "ignores": ["node_modules", ".venv", "dist"],
+  "postInitialize": ["npm install"]
 }
 ```
 
-- The file is optional — if missing, no default ignores are applied
+- The file is optional — if missing, no default ignores are applied and no commands are run
 - If present but malformed, an error is reported
 - CLI `--ignore` flags are merged with config file ignores (union of both)
 - `--include` overrides both CLI `--ignore` and config file ignores (include always wins)
+
+### postInitialize
+
+Some things cannot be copied into place and have to be rebuilt in the worktree: a Python virtualenv
+records its own absolute path, and a package manager may need to reconcile a dependency tree against
+the new location. `postInitialize` is a list of shell commands for that.
+
+- They run in the **destination** worktree, in the order listed, after copying has finished
+- They run even when there was nothing to copy
+- Each one goes through the platform shell (`/bin/sh -c` on unix, `cmd.exe /c` on Windows), so pipes,
+  redirection and `&&` work
+- The first command to exit non-zero stops the rest and fails the init, reporting the exit code and
+  the command's output. Later commands are assumed to depend on the earlier ones having succeeded
+- A command that runs longer than 30 minutes is killed and the init fails
+
+Because these come from a file in the source repository, they run with whatever privileges `wi` was
+started with. Treat the config file as you would any other executable content in the repo.
 
 ## Behavior
 
@@ -109,6 +128,20 @@ Runs `git ls-files --others --ignored --exclude-standard` in the source director
 ### Preserves directory structure
 
 Files are copied to the same relative path in the destination. If `src/bin/Debug/app.dll` is ignored in the source, it will be copied to `src/bin/Debug/app.dll` in the destination.
+
+### Preserves symbolic links and permissions
+
+A symbolic link is recreated as a link to the same raw target, rather than having the linked content
+copied. That matters twice over: a relative link keeps resolving inside the destination tree instead
+of pointing back at the source repository, and a link to a *directory* can be copied at all —
+dereferencing one means opening a directory as a file, which fails outright.
+
+A regular file keeps its unix permission bits, so an executable arrives executable. Copying the bytes
+alone is what turns a package manager's `node_modules/.bin` shims into non-executable files and makes
+the worktree fail to start with `Permission denied`.
+
+On Windows, where creating a link can be denied outright, a link to a file falls back to copying its
+content; a link to a directory is reported as a failure.
 
 ### Creates directories as needed
 
@@ -134,7 +167,7 @@ wi --mcp
 
 When running as an MCP server, the following tools are available:
 
-- `wi_init(sourcePath?, destinationPath?, ignorePaths?, includePaths?)` - Copy all gitignored files from source to destination (paths auto-detected when omitted and server is running inside a worktree)
+- `wi_init(sourcePath?, destinationPath?, ignorePaths?, includePaths?)` - Copy all gitignored files from source to destination, then run any `postInitialize` commands the source repo's `WorktreeConfig.json` declares (paths auto-detected when omitted and server is running inside a worktree)
 - `wi_help()` - Get help
 
 ## Development

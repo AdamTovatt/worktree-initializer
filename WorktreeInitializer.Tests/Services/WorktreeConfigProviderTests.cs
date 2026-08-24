@@ -1,3 +1,4 @@
+using WorktreeInitializer.Core.Models;
 using WorktreeInitializer.Core.Services;
 
 namespace WorktreeInitializer.Tests.Services
@@ -22,98 +23,141 @@ namespace WorktreeInitializer.Tests.Services
             }
         }
 
-        [Fact]
-        public async Task GetIgnorePatternsAsync_NoConfigFile_ReturnsEmptyList()
+        private void WriteConfig(string json)
         {
-            List<string> result = await _provider.GetIgnorePatternsAsync(_tempDir, CancellationToken.None);
-
-            Assert.Empty(result);
+            File.WriteAllText(Path.Combine(_tempDir, "WorktreeConfig.json"), json);
         }
 
         [Fact]
-        public async Task GetIgnorePatternsAsync_ValidConfig_ReturnsPatterns()
+        public async Task GetConfigAsync_NoConfigFile_ReturnsEmptyConfig()
         {
-            File.WriteAllText(
-                Path.Combine(_tempDir, "WorktreeConfig.json"),
-                """{"ignores": ["node_modules", ".venv", "dist"]}""");
+            WorktreeConfig result = await _provider.GetConfigAsync(_tempDir, CancellationToken.None);
 
-            List<string> result = await _provider.GetIgnorePatternsAsync(_tempDir, CancellationToken.None);
-
-            Assert.Equal(3, result.Count);
-            Assert.Contains("node_modules", result);
-            Assert.Contains(".venv", result);
-            Assert.Contains("dist", result);
+            Assert.Empty(result.Ignores);
+            Assert.Empty(result.PostInitializeCommands);
         }
 
         [Fact]
-        public async Task GetIgnorePatternsAsync_EmptyIgnoresArray_ReturnsEmptyList()
+        public async Task GetConfigAsync_ValidConfig_ReturnsPatterns()
         {
-            File.WriteAllText(
-                Path.Combine(_tempDir, "WorktreeConfig.json"),
-                """{"ignores": []}""");
+            WriteConfig("""{"ignores": ["node_modules", ".venv", "dist"]}""");
 
-            List<string> result = await _provider.GetIgnorePatternsAsync(_tempDir, CancellationToken.None);
+            WorktreeConfig result = await _provider.GetConfigAsync(_tempDir, CancellationToken.None);
 
-            Assert.Empty(result);
+            Assert.Equal(3, result.Ignores.Count);
+            Assert.Contains("node_modules", result.Ignores);
+            Assert.Contains(".venv", result.Ignores);
+            Assert.Contains("dist", result.Ignores);
         }
 
         [Fact]
-        public async Task GetIgnorePatternsAsync_NoIgnoresProperty_ReturnsEmptyList()
+        public async Task GetConfigAsync_EmptyIgnoresArray_ReturnsEmptyList()
         {
-            File.WriteAllText(
-                Path.Combine(_tempDir, "WorktreeConfig.json"),
-                """{"otherProp": true}""");
+            WriteConfig("""{"ignores": []}""");
 
-            List<string> result = await _provider.GetIgnorePatternsAsync(_tempDir, CancellationToken.None);
+            WorktreeConfig result = await _provider.GetConfigAsync(_tempDir, CancellationToken.None);
 
-            Assert.Empty(result);
+            Assert.Empty(result.Ignores);
         }
 
         [Fact]
-        public async Task GetIgnorePatternsAsync_MalformedJson_Throws()
+        public async Task GetConfigAsync_NoIgnoresProperty_ReturnsEmptyList()
         {
-            File.WriteAllText(
-                Path.Combine(_tempDir, "WorktreeConfig.json"),
-                "not valid json {{{");
+            WriteConfig("""{"otherProp": true}""");
+
+            WorktreeConfig result = await _provider.GetConfigAsync(_tempDir, CancellationToken.None);
+
+            Assert.Empty(result.Ignores);
+        }
+
+        [Fact]
+        public async Task GetConfigAsync_MalformedJson_Throws()
+        {
+            WriteConfig("not valid json {{{");
 
             await Assert.ThrowsAsync<InvalidOperationException>(
-                () => _provider.GetIgnorePatternsAsync(_tempDir, CancellationToken.None));
+                () => _provider.GetConfigAsync(_tempDir, CancellationToken.None));
         }
 
         [Fact]
-        public async Task GetIgnorePatternsAsync_IgnoresNotArray_Throws()
+        public async Task GetConfigAsync_IgnoresNotArray_Throws()
         {
-            File.WriteAllText(
-                Path.Combine(_tempDir, "WorktreeConfig.json"),
-                """{"ignores": "not an array"}""");
+            WriteConfig("""{"ignores": "not an array"}""");
 
             await Assert.ThrowsAsync<InvalidOperationException>(
-                () => _provider.GetIgnorePatternsAsync(_tempDir, CancellationToken.None));
+                () => _provider.GetConfigAsync(_tempDir, CancellationToken.None));
         }
 
         [Fact]
-        public async Task GetIgnorePatternsAsync_IgnoresContainsNonString_Throws()
+        public async Task GetConfigAsync_IgnoresContainsNonString_Throws()
         {
-            File.WriteAllText(
-                Path.Combine(_tempDir, "WorktreeConfig.json"),
-                """{"ignores": ["valid", 123]}""");
+            WriteConfig("""{"ignores": ["valid", 123]}""");
 
             await Assert.ThrowsAsync<InvalidOperationException>(
-                () => _provider.GetIgnorePatternsAsync(_tempDir, CancellationToken.None));
+                () => _provider.GetConfigAsync(_tempDir, CancellationToken.None));
         }
 
         [Fact]
-        public async Task GetIgnorePatternsAsync_WhitespaceEntries_AreSkipped()
+        public async Task GetConfigAsync_WhitespaceEntries_AreSkipped()
         {
-            File.WriteAllText(
-                Path.Combine(_tempDir, "WorktreeConfig.json"),
-                """{"ignores": ["node_modules", "", "  ", "dist"]}""");
+            WriteConfig("""{"ignores": ["node_modules", "", "  ", "dist"]}""");
 
-            List<string> result = await _provider.GetIgnorePatternsAsync(_tempDir, CancellationToken.None);
+            WorktreeConfig result = await _provider.GetConfigAsync(_tempDir, CancellationToken.None);
 
-            Assert.Equal(2, result.Count);
-            Assert.Contains("node_modules", result);
-            Assert.Contains("dist", result);
+            Assert.Equal(2, result.Ignores.Count);
+            Assert.Contains("node_modules", result.Ignores);
+            Assert.Contains("dist", result.Ignores);
+        }
+
+        [Fact]
+        public async Task GetConfigAsync_PostInitialize_ReturnsCommandsInOrder()
+        {
+            WriteConfig("""{"postInitialize": ["npm rebuild", "npm install"]}""");
+
+            WorktreeConfig result = await _provider.GetConfigAsync(_tempDir, CancellationToken.None);
+
+            Assert.Equal(new[] { "npm rebuild", "npm install" }, result.PostInitializeCommands);
+        }
+
+        [Fact]
+        public async Task GetConfigAsync_NoPostInitializeProperty_ReturnsEmptyList()
+        {
+            WriteConfig("""{"ignores": ["dist"]}""");
+
+            WorktreeConfig result = await _provider.GetConfigAsync(_tempDir, CancellationToken.None);
+
+            Assert.Empty(result.PostInitializeCommands);
+        }
+
+        [Fact]
+        public async Task GetConfigAsync_PostInitializeNotArray_Throws()
+        {
+            WriteConfig("""{"postInitialize": "npm install"}""");
+
+            InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => _provider.GetConfigAsync(_tempDir, CancellationToken.None));
+
+            Assert.Contains("postInitialize", exception.Message);
+        }
+
+        [Fact]
+        public async Task GetConfigAsync_PostInitializeContainsNonString_Throws()
+        {
+            WriteConfig("""{"postInitialize": ["npm install", 7]}""");
+
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => _provider.GetConfigAsync(_tempDir, CancellationToken.None));
+        }
+
+        [Fact]
+        public async Task GetConfigAsync_BothProperties_ReturnsBoth()
+        {
+            WriteConfig("""{"ignores": ["node_modules"], "postInitialize": ["npm install"]}""");
+
+            WorktreeConfig result = await _provider.GetConfigAsync(_tempDir, CancellationToken.None);
+
+            Assert.Equal(new[] { "node_modules" }, result.Ignores);
+            Assert.Equal(new[] { "npm install" }, result.PostInitializeCommands);
         }
     }
 }

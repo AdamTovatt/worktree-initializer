@@ -5,7 +5,8 @@ using WorktreeInitializer.Core.Models;
 namespace WorktreeInitializer.Core.Commands
 {
     /// <summary>
-    /// Orchestrates copying gitignored files from source to destination.
+    /// Orchestrates copying gitignored files from source to destination, then runs the
+    /// source repository's declared post-initialize commands in the destination.
     /// </summary>
     public class InitCommand : ICommand
     {
@@ -13,6 +14,7 @@ namespace WorktreeInitializer.Core.Commands
         private readonly IPathMapper _pathMapper;
         private readonly IFileCopyService _fileCopyService;
         private readonly IWorktreeConfigProvider _configProvider;
+        private readonly IShellCommandRunner _shellCommandRunner;
         private readonly string _sourcePath;
         private readonly string _destinationPath;
         private readonly IReadOnlyList<string>? _ignorePaths;
@@ -24,6 +26,7 @@ namespace WorktreeInitializer.Core.Commands
             IPathMapper pathMapper,
             IFileCopyService fileCopyService,
             IWorktreeConfigProvider configProvider,
+            IShellCommandRunner shellCommandRunner,
             string sourcePath,
             string destinationPath,
             IReadOnlyList<string>? ignorePaths = null,
@@ -34,6 +37,7 @@ namespace WorktreeInitializer.Core.Commands
             _pathMapper = pathMapper;
             _fileCopyService = fileCopyService;
             _configProvider = configProvider;
+            _shellCommandRunner = shellCommandRunner;
             _sourcePath = sourcePath;
             _destinationPath = destinationPath;
             _ignorePaths = ignorePaths;
@@ -56,6 +60,18 @@ namespace WorktreeInitializer.Core.Commands
                 return new CommandResult(Success: false, Message: $"Destination directory does not exist: {resolvedDestination}");
             }
 
+            // Read before discovering files: the post-initialize commands run even when there is
+            // nothing to copy, and a malformed config should fail before any work is done.
+            WorktreeConfig config;
+            try
+            {
+                config = await _configProvider.GetConfigAsync(resolvedSource, cancellationToken);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return new CommandResult(Success: false, Message: $"Failed to read config: {ex.Message}");
+            }
+
             _progress?.Report("Discovering files to copy...");
 
             List<string> ignoredFiles;
@@ -68,6 +84,63 @@ namespace WorktreeInitializer.Core.Commands
                 return new CommandResult(Success: false, Message: $"Failed to get ignored files: {ex.Message}");
             }
 
+            HashSet<string> ignorePatterns = BuildIgnorePatterns(config);
+
+            // Filter out files matching ignore patterns
+            int skippedCount = 0;
+            if (ignorePatterns.Count > 0)
+            {
+                int beforeCount = ignoredFiles.Count;
+                ignoredFiles = ignoredFiles.Where(f => !IsIgnored(f, ignorePatterns)).ToList();
+                skippedCount = beforeCount - ignoredFiles.Count;
+            }
+
+            string copyMessage;
+            string? copyDetails = null;
+            int failed = 0;
+
+            if (ignoredFiles.Count == 0)
+            {
+                string skipInfo = skippedCount > 0 ? $" ({skippedCount} file(s) excluded by ignore rules)" : "";
+                copyMessage = $"Nothing to copy — no ignored files found.{skipInfo}";
+            }
+            else
+            {
+                if (skippedCount > 0)
+                {
+                    _progress?.Report($"Discovered {ignoredFiles.Count} file(s) to copy ({skippedCount} excluded by ignore rules).");
+                }
+                else
+                {
+                    _progress?.Report($"Discovered {ignoredFiles.Count} file(s) to copy.");
+                }
+
+                List<FileCopyResult> results = await CopyFilesAsync(ignoredFiles, resolvedSource, resolvedDestination, cancellationToken);
+
+                int successCount = results.Count(r => r.Success);
+                failed = results.Count - successCount;
+
+                copyMessage = failed == 0
+                    ? $"Successfully copied {successCount} file(s)."
+                    : $"Copied {successCount} file(s), {failed} failed.";
+
+                if (failed > 0)
+                {
+                    IEnumerable<string> failureLines = results
+                        .Where(r => !r.Success)
+                        .Select(r => $"  FAILED: {r.RelativePath} — {r.Error}");
+                    copyDetails = string.Join(Environment.NewLine, failureLines);
+                }
+            }
+
+            List<ShellCommandResult> commandResults = await RunPostInitializeCommandsAsync(
+                config.PostInitializeCommands, resolvedDestination, cancellationToken);
+
+            return BuildResult(copyMessage, copyDetails, failed, config.PostInitializeCommands, commandResults);
+        }
+
+        private HashSet<string> BuildIgnorePatterns(WorktreeConfig config)
+        {
             // Merge CLI ignore paths + config file ignore patterns
             HashSet<string> ignorePatterns = new HashSet<string>(StringComparer.Ordinal);
 
@@ -79,17 +152,9 @@ namespace WorktreeInitializer.Core.Commands
                 }
             }
 
-            try
+            foreach (string pattern in config.Ignores)
             {
-                List<string> configPatterns = await _configProvider.GetIgnorePatternsAsync(resolvedSource, cancellationToken);
-                foreach (string pattern in configPatterns)
-                {
-                    ignorePatterns.Add(pattern);
-                }
-            }
-            catch (InvalidOperationException ex)
-            {
-                return new CommandResult(Success: false, Message: $"Failed to read config: {ex.Message}");
+                ignorePatterns.Add(pattern);
             }
 
             // --include wins: remove any patterns that appear in the include list
@@ -101,36 +166,21 @@ namespace WorktreeInitializer.Core.Commands
                 }
             }
 
-            // Filter out files matching ignore patterns
-            int skippedCount = 0;
-            if (ignorePatterns.Count > 0)
-            {
-                int beforeCount = ignoredFiles.Count;
-                ignoredFiles = ignoredFiles.Where(f => !IsIgnored(f, ignorePatterns)).ToList();
-                skippedCount = beforeCount - ignoredFiles.Count;
-            }
+            return ignorePatterns;
+        }
 
-            if (ignoredFiles.Count == 0)
-            {
-                string skipInfo = skippedCount > 0 ? $" ({skippedCount} file(s) excluded by ignore rules)" : "";
-                return new CommandResult(Success: true, Message: $"Nothing to copy — no ignored files found.{skipInfo}");
-            }
-
-            if (skippedCount > 0)
-            {
-                _progress?.Report($"Discovered {ignoredFiles.Count} file(s) to copy ({skippedCount} excluded by ignore rules).");
-            }
-            else
-            {
-                _progress?.Report($"Discovered {ignoredFiles.Count} file(s) to copy.");
-            }
-
+        private async Task<List<FileCopyResult>> CopyFilesAsync(
+            List<string> relativePaths,
+            string resolvedSource,
+            string resolvedDestination,
+            CancellationToken cancellationToken)
+        {
             List<FileCopyResult> results = new List<FileCopyResult>();
             int copied = 0;
-            int total = ignoredFiles.Count;
+            int total = relativePaths.Count;
             Stopwatch stopwatch = Stopwatch.StartNew();
 
-            foreach (string relativePath in ignoredFiles)
+            foreach (string relativePath in relativePaths)
             {
                 string sourceFullPath = _pathMapper.MapToFullPath(relativePath, resolvedSource);
                 string destFullPath = _pathMapper.MapToFullPath(relativePath, resolvedDestination);
@@ -141,29 +191,86 @@ namespace WorktreeInitializer.Core.Commands
                 if (_progress != null && stopwatch.Elapsed.TotalSeconds >= 3)
                 {
                     int percent = (int)((long)copied * 100 / total);
-                    _progress.Report($"{percent}% — {copied}/{total} files copied \u2014 {relativePath}");
+                    _progress.Report($"{percent}% — {copied}/{total} files copied — {relativePath}");
                     stopwatch.Restart();
                 }
             }
 
-            int successCount = results.Count(r => r.Success);
-            int failed = results.Count(r => !r.Success);
-            InitializationResult initResult = new InitializationResult(ignoredFiles.Count, successCount, failed, results);
+            return results;
+        }
 
-            string message = failed == 0
-                ? $"Successfully copied {successCount} file(s)."
-                : $"Copied {successCount} file(s), {failed} failed.";
+        private async Task<List<ShellCommandResult>> RunPostInitializeCommandsAsync(
+            IReadOnlyList<string> commands,
+            string workingDirectory,
+            CancellationToken cancellationToken)
+        {
+            List<ShellCommandResult> results = new List<ShellCommandResult>();
 
-            string? details = null;
-            if (failed > 0)
+            foreach (string command in commands)
             {
-                IEnumerable<string> failureLines = results
-                    .Where(r => !r.Success)
-                    .Select(r => $"  FAILED: {r.RelativePath} — {r.Error}");
-                details = string.Join(Environment.NewLine, failureLines);
+                _progress?.Report($"Running post-initialize command: {command}");
+
+                ShellCommandResult result;
+                try
+                {
+                    result = await _shellCommandRunner.RunAsync(workingDirectory, command, cancellationToken);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    result = new ShellCommandResult(command, ExitCode: -1, Output: ex.Message);
+                }
+
+                results.Add(result);
+
+                if (!result.Success)
+                {
+                    // Later commands are written assuming the earlier ones succeeded.
+                    break;
+                }
             }
 
-            return new CommandResult(Success: failed == 0, Message: message, Details: details);
+            return results;
+        }
+
+        private static CommandResult BuildResult(
+            string copyMessage,
+            string? copyDetails,
+            int filesFailed,
+            IReadOnlyList<string> requestedCommands,
+            List<ShellCommandResult> commandResults)
+        {
+            if (requestedCommands.Count == 0)
+            {
+                return new CommandResult(Success: filesFailed == 0, Message: copyMessage, Details: copyDetails);
+            }
+
+            ShellCommandResult? failedCommand = commandResults.FirstOrDefault(r => !r.Success);
+
+            if (failedCommand == null)
+            {
+                string message = $"{copyMessage} Ran {commandResults.Count} post-initialize command(s).";
+                return new CommandResult(Success: filesFailed == 0, Message: message, Details: copyDetails);
+            }
+
+            int notRun = requestedCommands.Count - commandResults.Count;
+            string skippedInfo = notRun > 0 ? $" {notRun} later command(s) were not run." : "";
+
+            List<string> detailLines = new List<string>();
+            if (copyDetails != null)
+            {
+                detailLines.Add(copyDetails);
+            }
+
+            detailLines.Add($"  POST-INITIALIZE FAILED (exit code {failedCommand.ExitCode}): {failedCommand.Command}");
+            if (failedCommand.Output.Length > 0)
+            {
+                detailLines.Add(failedCommand.Output);
+            }
+
+            return new CommandResult(
+                Success: false,
+                Message: $"{copyMessage} Post-initialize command failed: {failedCommand.Command}.{skippedInfo}",
+                Details: string.Join(Environment.NewLine, detailLines));
         }
 
         private static bool IsIgnored(string relativePath, HashSet<string> ignorePatterns)

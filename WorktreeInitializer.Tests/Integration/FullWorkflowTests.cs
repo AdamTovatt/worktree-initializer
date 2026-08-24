@@ -11,6 +11,7 @@ namespace WorktreeInitializer.Tests.Integration
         private readonly PathMapper _pathMapper;
         private readonly FileCopyService _fileCopyService;
         private readonly WorktreeConfigProvider _configProvider;
+        private readonly ShellCommandRunner _shellRunner;
         private readonly WorktreeDetector _worktreeDetector;
 
         public FullWorkflowTests()
@@ -23,6 +24,7 @@ namespace WorktreeInitializer.Tests.Integration
             _pathMapper = new PathMapper();
             _fileCopyService = new FileCopyService();
             _configProvider = new WorktreeConfigProvider();
+            _shellRunner = new ShellCommandRunner();
             _worktreeDetector = new WorktreeDetector(gitRunner);
         }
 
@@ -93,7 +95,7 @@ namespace WorktreeInitializer.Tests.Integration
             await File.WriteAllTextAsync(Path.Combine(sourceDir, "app.log"), "log data");
             await File.WriteAllTextAsync(Path.Combine(sourceDir, "secrets.env"), "API_KEY=abc123");
 
-            InitCommand command = new InitCommand(_gitProvider, _pathMapper, _fileCopyService, _configProvider, sourceDir, destDir);
+            InitCommand command = new InitCommand(_gitProvider, _pathMapper, _fileCopyService, _configProvider, _shellRunner, sourceDir, destDir);
             CommandResult result = await command.ExecuteAsync(CancellationToken.None);
 
             Assert.True(result.Success);
@@ -119,7 +121,7 @@ namespace WorktreeInitializer.Tests.Integration
             Directory.CreateDirectory(objDir);
             await File.WriteAllTextAsync(Path.Combine(objDir, "project.assets.json"), "{}");
 
-            InitCommand command = new InitCommand(_gitProvider, _pathMapper, _fileCopyService, _configProvider, sourceDir, destDir);
+            InitCommand command = new InitCommand(_gitProvider, _pathMapper, _fileCopyService, _configProvider, _shellRunner, sourceDir, destDir);
             CommandResult result = await command.ExecuteAsync(CancellationToken.None);
 
             Assert.True(result.Success);
@@ -136,7 +138,7 @@ namespace WorktreeInitializer.Tests.Integration
 
             // Don't create any ignored files — just the tracked ones from CreateSourceRepo
 
-            InitCommand command = new InitCommand(_gitProvider, _pathMapper, _fileCopyService, _configProvider, sourceDir, destDir);
+            InitCommand command = new InitCommand(_gitProvider, _pathMapper, _fileCopyService, _configProvider, _shellRunner, sourceDir, destDir);
             CommandResult result = await command.ExecuteAsync(CancellationToken.None);
 
             Assert.True(result.Success);
@@ -153,7 +155,7 @@ namespace WorktreeInitializer.Tests.Integration
             // Create an ignored file
             await File.WriteAllTextAsync(Path.Combine(sourceDir, "debug.log"), "some log");
 
-            InitCommand command = new InitCommand(_gitProvider, _pathMapper, _fileCopyService, _configProvider, sourceDir, destDir);
+            InitCommand command = new InitCommand(_gitProvider, _pathMapper, _fileCopyService, _configProvider, _shellRunner, sourceDir, destDir);
             CommandResult result = await command.ExecuteAsync(CancellationToken.None);
 
             Assert.True(result.Success);
@@ -183,7 +185,7 @@ namespace WorktreeInitializer.Tests.Integration
 
             // Use --ignore to skip bin and obj
             InitCommand command = new InitCommand(
-                _gitProvider, _pathMapper, _fileCopyService, _configProvider,
+                _gitProvider, _pathMapper, _fileCopyService, _configProvider, _shellRunner,
                 sourceDir, destDir,
                 ignorePaths: new List<string> { "bin", "obj" });
 
@@ -217,7 +219,7 @@ namespace WorktreeInitializer.Tests.Integration
                 """{"ignores": ["bin"]}""");
 
             InitCommand command = new InitCommand(
-                _gitProvider, _pathMapper, _fileCopyService, _configProvider,
+                _gitProvider, _pathMapper, _fileCopyService, _configProvider, _shellRunner,
                 sourceDir, destDir);
 
             CommandResult result = await command.ExecuteAsync(CancellationToken.None);
@@ -251,7 +253,7 @@ namespace WorktreeInitializer.Tests.Integration
                 """{"ignores": ["bin"]}""");
 
             InitCommand command = new InitCommand(
-                _gitProvider, _pathMapper, _fileCopyService, _configProvider,
+                _gitProvider, _pathMapper, _fileCopyService, _configProvider, _shellRunner,
                 sourceDir, destDir,
                 ignorePaths: new List<string> { "obj" });
 
@@ -283,7 +285,7 @@ namespace WorktreeInitializer.Tests.Integration
 
             // CLI --include re-includes bin
             InitCommand command = new InitCommand(
-                _gitProvider, _pathMapper, _fileCopyService, _configProvider,
+                _gitProvider, _pathMapper, _fileCopyService, _configProvider, _shellRunner,
                 sourceDir, destDir,
                 includePaths: new List<string> { "bin" });
 
@@ -311,7 +313,7 @@ namespace WorktreeInitializer.Tests.Integration
             // Go through CommandFactory with auto-detect (no paths)
             // Inject the worktree path as the working directory instead of mutating global state
             CommandFactory factory = new CommandFactory(
-                _gitProvider, _pathMapper, _fileCopyService, _configProvider, _worktreeDetector,
+                _gitProvider, _pathMapper, _fileCopyService, _configProvider, _shellRunner, _worktreeDetector,
                 getWorkingDirectory: () => worktreeDir);
 
             ICommand command = factory.CreateCommand(new[] { "init" });
@@ -322,6 +324,73 @@ namespace WorktreeInitializer.Tests.Integration
             Assert.True(File.Exists(Path.Combine(worktreeDir, "secrets.env")));
             Assert.Equal("log data", await File.ReadAllTextAsync(Path.Combine(worktreeDir, "app.log")));
             Assert.Equal("API_KEY=abc123", await File.ReadAllTextAsync(Path.Combine(worktreeDir, "secrets.env")));
+        }
+
+        [Fact]
+        public async Task FullWorkflow_IgnoredSymbolicLink_ArrivesAsALinkPointingInsideTheWorktree()
+        {
+            string sourceDir = await CreateSourceRepo();
+            string destDir = Path.Combine(_tempDir, "dest");
+            Directory.CreateDirectory(destDir);
+
+            // Both trees carry their own copy of the link's target, so a link copied by
+            // dereferencing, or rewritten to an absolute path, reads the source's copy. The
+            // target itself is not gitignored, so the copy never replaces the destination's.
+            await File.WriteAllTextAsync(Path.Combine(sourceDir, "target.txt"), "SOURCE");
+            await File.WriteAllTextAsync(Path.Combine(destDir, "target.txt"), "DESTINATION");
+
+            File.CreateSymbolicLink(Path.Combine(sourceDir, "alias.env"), "target.txt");
+
+            InitCommand command = new InitCommand(_gitProvider, _pathMapper, _fileCopyService, _configProvider, _shellRunner, sourceDir, destDir);
+            CommandResult result = await command.ExecuteAsync(CancellationToken.None);
+
+            Assert.True(result.Success);
+
+            string copiedLink = Path.Combine(destDir, "alias.env");
+            Assert.Equal("target.txt", new FileInfo(copiedLink).LinkTarget);
+            Assert.Equal("DESTINATION", await File.ReadAllTextAsync(copiedLink));
+        }
+
+        [Fact]
+        public async Task FullWorkflow_PostInitializeCommand_RunsInTheDestination()
+        {
+            string sourceDir = await CreateSourceRepo();
+            string destDir = Path.Combine(_tempDir, "dest");
+            Directory.CreateDirectory(destDir);
+
+            await File.WriteAllTextAsync(Path.Combine(sourceDir, "app.log"), "log data");
+
+            await File.WriteAllTextAsync(
+                Path.Combine(sourceDir, "WorktreeConfig.json"),
+                """{"postInitialize": ["echo ran > marker.txt"]}""");
+
+            InitCommand initCommand = new InitCommand(_gitProvider, _pathMapper, _fileCopyService, _configProvider, _shellRunner, sourceDir, destDir);
+            CommandResult result = await initCommand.ExecuteAsync(CancellationToken.None);
+
+            Assert.True(result.Success);
+            Assert.True(File.Exists(Path.Combine(destDir, "marker.txt")));
+            Assert.False(File.Exists(Path.Combine(sourceDir, "marker.txt")));
+        }
+
+        [Fact]
+        public async Task FullWorkflow_FailingPostInitializeCommand_FailsTheInit()
+        {
+            string sourceDir = await CreateSourceRepo();
+            string destDir = Path.Combine(_tempDir, "dest");
+            Directory.CreateDirectory(destDir);
+
+            await File.WriteAllTextAsync(
+                Path.Combine(sourceDir, "WorktreeConfig.json"),
+                """{"postInitialize": ["exit 3", "echo should-not-run > marker.txt"]}""");
+
+            InitCommand initCommand = new InitCommand(_gitProvider, _pathMapper, _fileCopyService, _configProvider, _shellRunner, sourceDir, destDir);
+            CommandResult result = await initCommand.ExecuteAsync(CancellationToken.None);
+
+            Assert.False(result.Success);
+            Assert.Contains("exit 3", result.Message);
+            Assert.NotNull(result.Details);
+            Assert.Contains("exit code 3", result.Details);
+            Assert.False(File.Exists(Path.Combine(destDir, "marker.txt")));
         }
     }
 }

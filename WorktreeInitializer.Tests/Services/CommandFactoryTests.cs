@@ -16,8 +16,9 @@ namespace WorktreeInitializer.Tests.Services
             Mock<IPathMapper> mockMapper = new Mock<IPathMapper>();
             Mock<IFileCopyService> mockCopy = new Mock<IFileCopyService>();
             Mock<IWorktreeConfigProvider> mockConfig = new Mock<IWorktreeConfigProvider>();
+            Mock<IShellCommandRunner> mockShell = new Mock<IShellCommandRunner>();
             _mockDetector = new Mock<IWorktreeDetector>();
-            _factory = new CommandFactory(mockGit.Object, mockMapper.Object, mockCopy.Object, mockConfig.Object, _mockDetector.Object);
+            _factory = new CommandFactory(mockGit.Object, mockMapper.Object, mockCopy.Object, mockConfig.Object, mockShell.Object, _mockDetector.Object);
         }
 
         [Fact]

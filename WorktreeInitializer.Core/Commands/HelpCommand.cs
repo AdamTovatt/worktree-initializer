@@ -24,18 +24,25 @@ namespace WorktreeInitializer.Core.Commands
                 "The init command copies all git-ignored files (e.g. build outputs, .env files)",
                 "from a source repository to a destination directory, preserving the directory structure.",
                 "",
+                "A symbolic link is recreated as a link to the same target rather than having its",
+                "content copied, and a regular file keeps its permission bits.",
+                "",
                 "When run inside a git worktree with no paths, 'wi init' automatically detects",
                 "the main repository as the source and uses the current directory as the destination.",
                 "",
                 "You can also place a WorktreeConfig.json in the source repo root to define",
-                "default ignores:",
+                "default ignores and commands to run once the copy has finished:",
                 "",
                 "  {",
-                "    \"ignores\": [\"node_modules\", \".venv\", \"dist\"]",
+                "    \"ignores\": [\"node_modules\", \".venv\", \"dist\"],",
+                "    \"postInitialize\": [\"npm install\"]",
                 "  }",
                 "",
                 "CLI --ignore flags are merged with config file ignores.",
-                "--include overrides both CLI --ignore and config file ignores.");
+                "--include overrides both CLI --ignore and config file ignores.",
+                "",
+                "postInitialize commands run in the destination worktree, in order, through the",
+                "platform shell. The first one to exit non-zero stops the rest and fails the init.");
 
             return Task.FromResult(new CommandResult(Success: true, Message: message, Details: details));
         }

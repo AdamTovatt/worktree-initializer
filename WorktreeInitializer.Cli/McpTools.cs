@@ -15,6 +15,7 @@ namespace WorktreeInitializer.Cli
         private readonly IPathMapper _pathMapper;
         private readonly IFileCopyService _fileCopyService;
         private readonly IWorktreeConfigProvider _configProvider;
+        private readonly IShellCommandRunner _shellCommandRunner;
         private readonly IWorktreeDetector _worktreeDetector;
 
         public McpTools(
@@ -22,17 +23,19 @@ namespace WorktreeInitializer.Cli
             IPathMapper pathMapper,
             IFileCopyService fileCopyService,
             IWorktreeConfigProvider configProvider,
+            IShellCommandRunner shellCommandRunner,
             IWorktreeDetector worktreeDetector)
         {
             _gitIgnoredFileProvider = gitIgnoredFileProvider;
             _pathMapper = pathMapper;
             _fileCopyService = fileCopyService;
             _configProvider = configProvider;
+            _shellCommandRunner = shellCommandRunner;
             _worktreeDetector = worktreeDetector;
         }
 
         [McpServerTool(Name = "wi_init")]
-        [Description("Copy all gitignored files from a source git repository to a destination directory. Preserves directory structure. Auto-detection (omitting paths) only works when the MCP server was launched from inside a worktree. When calling from an external client, always provide both sourcePath and destinationPath explicitly.")]
+        [Description("Copy all gitignored files from a source git repository to a destination directory, then run any postInitialize commands the source repository's WorktreeConfig.json declares. Preserves directory structure and symbolic links. Auto-detection (omitting paths) only works when the MCP server was launched from inside a worktree. When calling from an external client, always provide both sourcePath and destinationPath explicitly.")]
         public async Task<string> InitAsync(
             CancellationToken cancellationToken,
             [Description("The path to the source git repository. Required when calling from an MCP client. If omitted, auto-detected from the server's working directory.")]
@@ -69,7 +72,7 @@ namespace WorktreeInitializer.Cli
             IReadOnlyList<string>? ignoreList = ignorePaths is { Length: > 0 } ? ignorePaths : null;
             IReadOnlyList<string>? includeList = includePaths is { Length: > 0 } ? includePaths : null;
             InitCommand command = new InitCommand(
-                _gitIgnoredFileProvider, _pathMapper, _fileCopyService, _configProvider,
+                _gitIgnoredFileProvider, _pathMapper, _fileCopyService, _configProvider, _shellCommandRunner,
                 resolvedSource, resolvedDestination, ignoreList, includeList);
             CommandResult result = await command.ExecuteAsync(cancellationToken);
             return FormatResult(result);

@@ -11,6 +11,7 @@ namespace WorktreeInitializer.Tests.Cli
         private readonly Mock<IPathMapper> _mockMapper;
         private readonly Mock<IFileCopyService> _mockCopy;
         private readonly Mock<IWorktreeConfigProvider> _mockConfig;
+        private readonly Mock<IShellCommandRunner> _mockShell;
         private readonly Mock<IWorktreeDetector> _mockDetector;
         private readonly McpTools _mcpTools;
 
@@ -20,15 +21,16 @@ namespace WorktreeInitializer.Tests.Cli
             _mockMapper = new Mock<IPathMapper>();
             _mockCopy = new Mock<IFileCopyService>();
             _mockConfig = new Mock<IWorktreeConfigProvider>();
+            _mockShell = new Mock<IShellCommandRunner>();
             _mockDetector = new Mock<IWorktreeDetector>();
 
             _mockConfig
-                .Setup(c => c.GetIgnorePatternsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<string>());
+                .Setup(c => c.GetConfigAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(WorktreeConfig.Empty);
 
             _mcpTools = new McpTools(
                 _mockGit.Object, _mockMapper.Object, _mockCopy.Object,
-                _mockConfig.Object, _mockDetector.Object);
+                _mockConfig.Object, _mockShell.Object, _mockDetector.Object);
         }
 
         [Fact]

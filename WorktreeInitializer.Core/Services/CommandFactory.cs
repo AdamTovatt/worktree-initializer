@@ -12,6 +12,7 @@ namespace WorktreeInitializer.Core.Services
         private readonly IPathMapper _pathMapper;
         private readonly IFileCopyService _fileCopyService;
         private readonly IWorktreeConfigProvider _configProvider;
+        private readonly IShellCommandRunner _shellCommandRunner;
         private readonly IWorktreeDetector _worktreeDetector;
         private readonly Func<string> _getWorkingDirectory;
 
@@ -20,6 +21,7 @@ namespace WorktreeInitializer.Core.Services
             IPathMapper pathMapper,
             IFileCopyService fileCopyService,
             IWorktreeConfigProvider configProvider,
+            IShellCommandRunner shellCommandRunner,
             IWorktreeDetector worktreeDetector,
             Func<string>? getWorkingDirectory = null)
         {
@@ -27,6 +29,7 @@ namespace WorktreeInitializer.Core.Services
             _pathMapper = pathMapper;
             _fileCopyService = fileCopyService;
             _configProvider = configProvider;
+            _shellCommandRunner = shellCommandRunner;
             _worktreeDetector = worktreeDetector;
             _getWorkingDirectory = getWorkingDirectory ?? Directory.GetCurrentDirectory;
         }
@@ -105,6 +108,7 @@ namespace WorktreeInitializer.Core.Services
                 _pathMapper,
                 _fileCopyService,
                 _configProvider,
+                _shellCommandRunner,
                 sourcePath,
                 destinationPath,
                 ignorePaths.Count > 0 ? ignorePaths : null,
